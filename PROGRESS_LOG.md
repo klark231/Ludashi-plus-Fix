@@ -108,11 +108,31 @@ After game downloads in store Activity:
 
 ---
 
-## Commits
+## Commits & Builds
 
-| Commit | Tag | Description |
-|---|---|---|
-| (pending first build) | — | — |
+| Commit | Tag | Description | CI Run | Result |
+|---|---|---|---|---|
+| `80b227e` | v1.0.0-pre1 | feat: Game Stores integration — GOG, Epic Games, Amazon Games | [24152114060](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152114060) | ❌ wrong APK filename |
+| `0c60519` | v1.0.0-pre1 | fix: correct APK filename pattern (ludashi-bionic.apk) | [24152162792](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152162792) | ❌ old tag ref |
+| `224da83` | main | fix: use aapt1 for apktool rebuild | [24152205082](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152205082) | ❌ ab_*.png not PNGs |
+| `d31f636` | main | fix: delete ab_*.png before aapt, re-inject from base APK | [24152532867](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152532867) | ❌ public.xml still declares ab_* |
+| `94c8a87` | main | fix: remove ab_* public.xml declarations | [24152642431](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152642431) | ❌ ab_gear_* also broken |
+| `5819bb1` | main | fix: remove ab_gear_* from patches/public.xml | [24152754660](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152754660) | ❌ new IDs not defined |
+| `4817758` | main | fix: remove ab_gear_* and broaden sed pattern | [24152887419](https://github.com/The412Banner/Ludashi-plus/actions/runs/24152887419) | ❌ menu IDs not defined |
+| `6692819` | main | fix: @+id/ in menu for new IDs | [24153007060](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153007060) | ❌ still not defined |
+| `e9f1f2f` | main | fix: add ids.xml to declare new menu IDs for aapt1 | [24153146047](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153146047) | ❌ animated_background refs deleted PNGs |
+| `15c1ad1` | main | fix: delete animated_background.xml too, re-inject both | [24153266958](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153266958) | ❌ animated_background in patches/public.xml |
+| `515019e` | main | fix: remove animated_background from patches/public.xml | [24153409292](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153409292) | ❌ 403 on release upload |
+| `f365554` | v1.0.0-pre1 | fix: add contents: write permission | [24153527621](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153527621) | ✅ APK built, 403 fixed |
+| `f365554` | v1.0.0-pre1 | (final tagged build) | [24153825677](https://github.com/The412Banner/Ludashi-plus/actions/runs/24153825677) | ✅ **success — release published** |
+
+### Root Causes Fixed (CI debugging chain)
+1. Wrong APK filename (`winlator-ludashi-bionic.apk` → `ludashi-bionic.apk`)
+2. `ab_*.png` and `ab_gear_*.png` are raw animation frames, not valid PNGs — aapt1/aapt2 both reject them
+3. `animated_background.xml` references the deleted pseudo-PNGs — must also be removed
+4. `public.xml` in `patches/` retained entries for all deleted files → must remove them
+5. New menu IDs (`group_game_stores`, `main_menu_gog/epic/amazon`) need explicit `<item type="id">` declaration in an ids.xml for aapt1
+6. `GITHUB_TOKEN` needs `contents: write` permission for release creation in `workflow_dispatch`
 
 ---
 
