@@ -95,6 +95,7 @@ jobs:
       - name: Build modified APK with apktool
         run: |
           java -jar $HOME/bin/apktool.jar b apktool_out_base \
+            --use-aapt1 \
             -o rebuilt-unsigned.apk
           ls -lh rebuilt-unsigned.apk
 
