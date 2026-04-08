@@ -56,16 +56,21 @@ jobs:
           # Remove firebase_*_keep IDs that break aapt2
           sed -i '/firebase_common_keep\|firebase_crashlytics_keep/d' \
             apktool_out_base/res/values/public.xml || true
-          # The ab_*.png files in Ludashi are not real PNGs (raw animation frames).
-          # Both aapt1 and aapt2 reject them. Delete before build; re-inject from
-          # original APK afterward to preserve them in the output.
-          AB_COUNT=$(find apktool_out_base/res/drawable -name 'ab_*.png' | wc -l)
-          echo "Removing $AB_COUNT ab_*.png pseudo-PNG files before aapt"
-          find apktool_out_base/res/drawable -name 'ab_*.png' -delete
-          # Also remove their public.xml declarations (aapt errors if file absent but declared)
-          # (patches/public.xml is clean; this handles the base-decoded version before overwrite)
-          sed -i '/name="ab_[0-9]\|name="ab_gear_/d' apktool_out_base/res/values/public.xml
-          echo "Removed ab_* public.xml declarations"
+          # The ab_*.png / ab_gear_*.png files are not valid PNGs (raw animation frames).
+          # animated_background.xml and animated_gear_background.xml reference them.
+          # Delete all these files + their public.xml entries before aapt build;
+          # re-inject the original bytes from the base APK afterward.
+          DRAWABLE_DIR=apktool_out_base/res/drawable
+          AB_COUNT=$(find "$DRAWABLE_DIR" -name 'ab_*.png' | wc -l)
+          echo "Removing $AB_COUNT ab_*.png pseudo-PNG files"
+          find "$DRAWABLE_DIR" -name 'ab_*.png' -delete
+          # Also delete drawable XMLs that reference the deleted PNGs
+          rm -f "$DRAWABLE_DIR/animated_background.xml" \
+                "$DRAWABLE_DIR/animated_gear_background.xml"
+          # Remove all their public.xml entries
+          sed -i '/name="ab_[0-9]\|name="ab_gear_\|name="animated_background\|name="animated_gear_background/d' \
+            apktool_out_base/res/values/public.xml
+          echo "Removed ab_*/animated_background entries from public.xml"
 
       - name: Apply patches
         run: |
@@ -109,21 +114,25 @@ jobs:
             -o rebuilt-unsigned.apk
           ls -lh rebuilt-unsigned.apk
 
-      - name: Re-inject original ab_*.png from base APK
+      - name: Re-inject original ab_*.png and animated XMLs from base APK
         run: |
-          # These files were removed before aapt because they're not real PNGs.
-          # Copy them back from the original APK zip into the rebuilt APK.
+          # These files were removed before aapt (pseudo-PNG / XML referencing them).
+          # Re-inject original bytes from the base APK zip — bypasses aapt recompilation.
           BASE_APK=$(ls base/*.apk | head -1)
-          AB_LIST=$(unzip -l "$BASE_APK" | awk '{print $4}' | grep 'res/drawable/ab_.*\.png')
-          COUNT=$(echo "$AB_LIST" | grep -c . || true)
-          echo "Re-injecting $COUNT ab_*.png entries from $BASE_APK"
-          if [ "$COUNT" -gt 0 ]; then
-            # Extract to temp dir preserving path, then add to rebuilt APK
-            mkdir -p ab_reinject
-            unzip -q "$BASE_APK" 'res/drawable/ab_*.png' -d ab_reinject
-            (cd ab_reinject && zip -r ../rebuilt-unsigned.apk res/drawable/ab_*.png)
-            echo "Done. Entries added:"
-            unzip -l rebuilt-unsigned.apk | grep 'res/drawable/ab_' | wc -l
+          mkdir -p ab_reinject
+          # Extract all ab_*.png, ab_gear_*.png, and the animated drawable XMLs
+          unzip -q "$BASE_APK" \
+            'res/drawable/ab_*.png' \
+            'res/drawable/animated_background.xml' \
+            'res/drawable/animated_gear_background.xml' \
+            -d ab_reinject 2>/dev/null || true
+          INJECTED=$(find ab_reinject -type f | wc -l)
+          echo "Re-injecting $INJECTED files from $BASE_APK"
+          if [ "$INJECTED" -gt 0 ]; then
+            # Add with preserved paths (res/drawable/...)
+            (cd ab_reinject && zip -r ../rebuilt-unsigned.apk res/)
+            echo "Done. ab_/animated entries in APK:"
+            unzip -l rebuilt-unsigned.apk | grep 'res/drawable/ab_\|animated_background\|animated_gear' | wc -l
           fi
 
       - name: Inject store extension as classes17.dex
