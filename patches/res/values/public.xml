@@ -1819,7 +1819,6 @@
     <public type="drawable" name="abc_text_cursor_material" id="0x7f0800c6" />
     <public type="drawable" name="abc_textfield_search_material" id="0x7f0800d4" />
     <public type="drawable" name="abc_vector_test" id="0x7f0800d5" />
-    <public type="drawable" name="animated_background" id="0x7f0800d6" />
     <public type="drawable" name="avd_hide_password" id="0x7f0800d7" />
     <public type="drawable" name="avd_show_password" id="0x7f0800d8" />
     <public type="drawable" name="bg_transparent_dark" id="0x7f0800d9" />
