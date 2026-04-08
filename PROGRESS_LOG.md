@@ -134,6 +134,17 @@ After game downloads in store Activity:
 5. New menu IDs (`group_game_stores`, `main_menu_gog/epic/amazon`) need explicit `<item type="id">` declaration in an ids.xml for aapt1
 6. `GITHUB_TOKEN` needs `contents: write` permission for release creation in `workflow_dispatch`
 
+### Signing
+APK is signed with the AOSP public testkey (`testkey.pk8` / `testkey.x509.pem`, committed to repo). Fine for sideloading; not suitable for signature-verified updates. A private keystore stored as a GitHub Actions secret is the upgrade path if needed.
+
+### Pending: Device Testing (2026-04-08)
+- [ ] Three store entries visible in nav drawer (GOG, Epic Games, Amazon Games)
+- [ ] Store Activities open correctly from nav drawer
+- [ ] Login flows work (GOG OAuth, Epic redirect, Amazon PKCE)
+- [ ] Library sync and game listing works
+- [ ] Download pipeline works end-to-end
+- [ ] Launch bridge opens Wine container after download completes (v1: user navigates to exe manually)
+
 ---
 
 *Updated automatically after every commit and build.*
