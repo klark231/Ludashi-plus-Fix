@@ -59,8 +59,7 @@ public final class LudashiLaunchBridge {
                 }
 
                 h.post(() -> new AlertDialog.Builder(activity)
-                        .setTitle("Add \"" + gameName + "\" to Launcher")
-                        .setMessage("Select a Wine container:")
+                        .setTitle("Select container for \"" + gameName + "\"")
                         .setItems(names, (dialog, which) ->
                                 writeShortcut(activity, containers.get(which), gameName, exePath, h))
                         .setNegativeButton("Cancel", null)
