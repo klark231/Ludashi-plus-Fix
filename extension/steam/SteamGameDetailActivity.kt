@@ -2,6 +2,7 @@ package com.winlator.cmod.store
 
 import android.app.Activity
 import android.graphics.Bitmap
+import java.io.File
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
@@ -164,12 +165,16 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
     private fun onInstallClicked() {
         val g = game ?: return
         if (g.isInstalled) {
-            // Uninstall
+            // Uninstall — remove from DB and delete files
             SteamRepository.getInstance().database.markUninstalled(appId)
+            if (g.installDir.isNotEmpty()) {
+                Thread { File(g.installDir).deleteRecursively() }.start()
+            }
             loadGame()
         } else {
-            // Phase 6 — depot download not yet implemented
-            Toast.makeText(this, "Download engine coming in Phase 6", Toast.LENGTH_SHORT).show()
+            installBtn.isEnabled = false
+            installBtn.text = "Starting…"
+            SteamDepotDownloader.getInstance().installApp(appId, applicationContext)
         }
     }
 

@@ -423,3 +423,51 @@ Implement game detail screen (header art, metadata, Install/Launch buttons) and 
 | Commit | Tag | Description | CI Run | Result |
 |---|---|---|---|---|
 | TBD | v1.0.0-pre10 | feat: Phase 5 — game detail screen + click wiring | TBD | pending |
+
+---
+
+## Session: 2026-04-09 — Steam Integration Phase 6 (Depot Download Engine)
+
+### Goal
+Implement full depot download: manifest IDs from PICS, depot key fetching, CDN download, VZip/LZMA decompression, file writing.
+
+### What Changed
+
+**Modified: `extension/steam/SteamDatabase.java`**
+- DB version bumped 1 → 2 (triggers onUpgrade on existing installs)
+- New `depot_manifests` table: (app_id, depot_id, manifest_id, size_bytes)
+- `DepotManifestRow` inner class
+- `upsertDepotManifest()`, `getDepotManifests(appId)` methods
+
+**Modified: `extension/steam/SteamRepository.java`**
+- Import `DepotKeyCallback`
+- `depotKeys: ConcurrentHashMap<Integer, byte[]>` — depot decryption keys
+- `getDepotKey(depotId)`, `requestDepotKey(depotId, appId)` methods
+- `onDepotKey()` callback handler — stores key, emits `DepotKeyReady:<id>` or `DepotKeyFailed:<id>:<reason>`
+- PICS SYNC_APPS: now also parses `depots/{id}/manifests/public/gid` + `maxsize` → `upsertDepotManifest()`; total size summed from depots and stored in `upsertGame()`
+- `emit()` promoted to public (needed by SteamDepotDownloader)
+
+**New: `extension/steam/SteamDepotDownloader.java`**
+- Singleton download engine, 3-thread executor
+- `installApp(appId, ctx)`: queues download, starts worker thread
+- `pickCdnServer()`: GET Steam CDN list API, picks first CDN/SteamCache server with HTTPS; fallback = `lancache.steamcontent.com`
+- `downloadAllDepots()`: for each depot: wait for key (30s poll), download manifest, parse files, download+decrypt+decompress each chunk, write at offset
+- `downloadManifest()`: HTTPS GET `{cdn}/depot/{depotId}/manifest/{manifestId}/5`
+- `decompressManifestBlob()`: auto-detects VZip / PKZIP / gzip / raw protobuf
+- `parseManifest()`: `ContentManifest.ContentManifestPayload.parseFrom()` → list of `FileEntry` + `ChunkEntry`
+- `downloadChunk()`: HTTPS GET `{cdn}/depot/{depotId}/chunk/{chunkGidHex}`
+- `decryptChunk()`: AES-256-ECB via `javax.crypto.Cipher` (null key = pass-through)
+- `decompressChunk()`: VZip → `decompressVZip()` → `lzmaDecompress()` via reflection (`org.tukaani.xz.LZMAInputStream`)
+- Emits `DownloadProgress:<appId>:<done>:<total>`, `DownloadComplete:<appId>`, `DownloadFailed:<appId>:<reason>`
+
+**Modified: `extension/steam/SteamGameDetailActivity.kt`**
+- `onInstallClicked()` now calls `SteamDepotDownloader.getInstance().installApp(appId, ctx)`
+- Uninstall also calls `File.deleteRecursively()` in background thread
+
+**Modified: `.github/workflows/build.yml`**
+- Removed CDN inspection step (no longer needed)
+
+### Commits & Builds
+| Commit | Tag | Description | CI Run | Result |
+|---|---|---|---|---|
+| TBD | v1.0.0-pre11 | feat: Phase 6 — depot download engine | TBD | pending |

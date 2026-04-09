@@ -22,6 +22,7 @@ import in.dragonbra.javasteam.steam.handlers.steamapps.License;
 import in.dragonbra.javasteam.steam.handlers.steamapps.PICSProductInfo;
 import in.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest;
 import in.dragonbra.javasteam.steam.handlers.steamapps.SteamApps;
+import in.dragonbra.javasteam.steam.handlers.steamapps.callback.DepotKeyCallback;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.PICSProductInfoCallback;
 import in.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends;
@@ -130,6 +131,21 @@ public final class SteamRepository {
     }
 
     // -------------------------------------------------------------------------
+    // Depot decryption keys (Phase 6)
+    // -------------------------------------------------------------------------
+
+    // depotId → AES-256-ECB key bytes (null if no encryption for that depot)
+    private final Map<Integer, byte[]> depotKeys = new ConcurrentHashMap<>();
+
+    public byte[] getDepotKey(int depotId) { return depotKeys.get(depotId); }
+
+    /** Request a depot decryption key for the given depot. Result comes via DepotKeyCallback. */
+    public void requestDepotKey(int depotId, int appId) {
+        if (steamApps == null) return;
+        steamApps.getDepotDecryptionKey(depotId, appId);
+    }
+
+    // -------------------------------------------------------------------------
     // PICS sync state (Phase 4)
     // -------------------------------------------------------------------------
 
@@ -178,6 +194,7 @@ public final class SteamRepository {
         manager.subscribe(LoggedOffCallback.class,      this::onLoggedOff);
         manager.subscribe(LicenseListCallback.class,    this::onLicenseList);
         manager.subscribe(PICSProductInfoCallback.class, this::onPICSProductInfo);
+        manager.subscribe(DepotKeyCallback.class,        this::onDepotKey);
     }
 
     // -------------------------------------------------------------------------
@@ -359,21 +376,40 @@ public final class SteamRepository {
                     String clientIcon = common.get("clienticon").asString();
                     if (icon.isEmpty()) icon = clientIcon;
 
-                    // Collect numeric depot IDs from the "depots" section
+                    // Collect depot IDs, manifest IDs, and sizes from the "depots" section
                     StringBuilder depotSb = new StringBuilder();
+                    long totalSize = 0L;
                     KeyValue depotsKv = app.getKeyValues().get("depots");
                     List<KeyValue> depotChildren = depotsKv.getChildren();
                     if (depotChildren != null) {
                         for (KeyValue d : depotChildren) {
-                            try {
-                                Integer.parseInt(d.getName()); // validates it's an int depot ID
-                                if (depotSb.length() > 0) depotSb.append(',');
-                                depotSb.append(d.getName());
-                            } catch (NumberFormatException ignored) {}
+                            int depotId;
+                            try { depotId = Integer.parseInt(d.getName()); }
+                            catch (NumberFormatException ignored) { continue; }
+                            if (depotSb.length() > 0) depotSb.append(',');
+                            depotSb.append(depotId);
+                            // Extract manifest GID from depots/{id}/manifests/public/gid
+                            String manifestGid = d.get("manifests").get("public").get("gid").asString();
+                            if (manifestGid.isEmpty()) {
+                                // Some depots use "manifest" directly (older format)
+                                manifestGid = d.get("manifest").asString();
+                            }
+                            long depotSize = 0L;
+                            String maxSize = d.get("maxsize").asString();
+                            if (!maxSize.isEmpty()) {
+                                try { depotSize = Long.parseLong(maxSize); totalSize += depotSize; }
+                                catch (NumberFormatException ignored) {}
+                            }
+                            if (!manifestGid.isEmpty()) {
+                                try {
+                                    long manifestId = Long.parseLong(manifestGid);
+                                    db.upsertDepotManifest(app.getId(), depotId, manifestId, depotSize);
+                                } catch (NumberFormatException ignored) {}
+                            }
                         }
                     }
 
-                    db.upsertGame(app.getId(), name, icon, 0L, depotSb.toString(), type);
+                    db.upsertGame(app.getId(), name, icon, totalSize, depotSb.toString(), type);
                     count++;
                 }
                 syncPhase = SYNC_IDLE;
@@ -382,6 +418,18 @@ public final class SteamRepository {
                 Log.i(TAG, "Library sync complete: " + count + " games/DLC");
                 emit("LibrarySynced:" + count);
             }
+        }
+    }
+
+    /** Handle depot decryption key callback. Stores key in memory for SteamDepotDownloader. */
+    private void onDepotKey(DepotKeyCallback cb) {
+        if (cb.getResult() == EResult.OK) {
+            depotKeys.put(cb.getDepotID(), cb.getDepotKey());
+            Log.i(TAG, "Depot key received for depot " + cb.getDepotID());
+            emit("DepotKeyReady:" + cb.getDepotID());
+        } else {
+            Log.w(TAG, "Depot key request failed for depot " + cb.getDepotID() + ": " + cb.getResult());
+            emit("DepotKeyFailed:" + cb.getDepotID() + ":" + cb.getResult().name());
         }
     }
 

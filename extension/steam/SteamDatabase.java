@@ -30,7 +30,7 @@ public final class SteamDatabase extends SQLiteOpenHelper {
 
     private static final String TAG        = "SteamDB";
     private static final String DB_NAME    = "steam.db";
-    private static final int    DB_VERSION = 1;
+    private static final int    DB_VERSION = 2;
 
     // -------------------------------------------------------------------------
     // DDL
@@ -75,6 +75,15 @@ public final class SteamDatabase extends SQLiteOpenHelper {
             "  added_at         INTEGER NOT NULL DEFAULT 0" +
             ")";
 
+    private static final String SQL_DEPOT_MANIFESTS =
+            "CREATE TABLE depot_manifests (" +
+            "  app_id      INTEGER NOT NULL," +
+            "  depot_id    INTEGER NOT NULL," +
+            "  manifest_id INTEGER NOT NULL DEFAULT 0," +
+            "  size_bytes  INTEGER NOT NULL DEFAULT 0," +
+            "  PRIMARY KEY (app_id, depot_id)" +
+            ")";
+
     // -------------------------------------------------------------------------
     // Singleton
     // -------------------------------------------------------------------------
@@ -112,12 +121,14 @@ public final class SteamDatabase extends SQLiteOpenHelper {
         db.execSQL(SQL_LICENSES);
         db.execSQL(SQL_LICENSE_APPS);
         db.execSQL(SQL_DOWNLOADS);
+        db.execSQL(SQL_DEPOT_MANIFESTS);
         Log.i(TAG, "steam.db created (v" + DB_VERSION + ")");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         Log.i(TAG, "Upgrading steam.db v" + oldVersion + " → v" + newVersion);
+        db.execSQL("DROP TABLE IF EXISTS depot_manifests");
         db.execSQL("DROP TABLE IF EXISTS steam_downloads");
         db.execSQL("DROP TABLE IF EXISTS steam_license_apps");
         db.execSQL("DROP TABLE IF EXISTS steam_licenses");
@@ -324,6 +335,49 @@ public final class SteamDatabase extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         db.delete("steam_license_apps", null, null);
         db.delete("steam_licenses",     null, null);
+    }
+
+    // =========================================================================
+    // depot_manifests
+    // =========================================================================
+
+    public static final class DepotManifestRow {
+        public final int  appId;
+        public final int  depotId;
+        public final long manifestId;
+        public final long sizeBytes;
+
+        DepotManifestRow(int appId, int depotId, long manifestId, long sizeBytes) {
+            this.appId      = appId;
+            this.depotId    = depotId;
+            this.manifestId = manifestId;
+            this.sizeBytes  = sizeBytes;
+        }
+    }
+
+    public void upsertDepotManifest(int appId, int depotId, long manifestId, long sizeBytes) {
+        ContentValues cv = new ContentValues();
+        cv.put("app_id",      appId);
+        cv.put("depot_id",    depotId);
+        cv.put("manifest_id", manifestId);
+        cv.put("size_bytes",  sizeBytes);
+        getWritableDatabase().insertWithOnConflict(
+                "depot_manifests", null, cv, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** All depots (with manifest IDs) for a given app. */
+    public List<DepotManifestRow> getDepotManifests(int appId) {
+        List<DepotManifestRow> rows = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT app_id,depot_id,manifest_id,size_bytes FROM depot_manifests" +
+                " WHERE app_id = ? ORDER BY depot_id",
+                new String[]{String.valueOf(appId)})) {
+            while (c.moveToNext()) {
+                rows.add(new DepotManifestRow(
+                        c.getInt(0), c.getInt(1), c.getLong(2), c.getLong(3)));
+            }
+        }
+        return rows;
     }
 
     // =========================================================================
