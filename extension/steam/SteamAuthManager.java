@@ -4,9 +4,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import in.dragonbra.javasteam.enums.EAuthTokenPlatformType;
 import in.dragonbra.javasteam.enums.EOSType;
 import in.dragonbra.javasteam.steam.authentication.AuthPollResult;
 import in.dragonbra.javasteam.steam.authentication.AuthSessionDetails;
@@ -20,21 +20,24 @@ import in.dragonbra.javasteam.steam.authentication.SteamAuthentication;
  * Written in Java (not Kotlin) to avoid Kotlin 2.2.0 metadata incompatibility
  * with the base APK's kotlinc 1.9.x.
  *
+ * JavaSteam's authentication API is CompletableFuture-based.
+ * IAuthenticator methods return CompletableFuture<T>; the Steam Guard futures
+ * are resolved from the UI thread when the user submits a code.
+ *
  * Flow:
  *   startCredentialLogin(username, password, listener)
- *     → beginAuthSessionViaCredentials()
- *     → pollingWaitForResult() [blocks auth thread]
- *       → IAuthenticator.getEmailCode() / getTotpCode() if Steam Guard needed
- *         → posts event to UI; blocks on codeQueue.take()
- *         → UI calls submitGuardCode(code) → codeQueue.offer(code) → unblocks
+ *     → beginAuthSessionViaCredentials() returns CF<CredentialsAuthSession>
+ *     → pollingWaitForResult() returns CF<AuthPollResult>
+ *       → IAuthenticator.getEmailCode() / getTotpCode() called if Steam Guard needed
+ *         → posts event to UI (main thread)
+ *         → returns a CF that completes when submitGuardCode() is called from UI
  *     → onSuccess(username, refreshToken) posted to main thread
  *
- * Cancellation: cancelAuth() offers a sentinel to unblock the queue.
+ * Cancellation: cancelAuth() completes pending futures exceptionally.
  */
 public final class SteamAuthManager {
 
     private static final String TAG = "SteamAuth";
-    private static final String CANCEL_SENTINEL = "\u0000__cancel__\u0000";
 
     // -------------------------------------------------------------------------
     // Singleton
@@ -61,21 +64,23 @@ public final class SteamAuthManager {
     // -------------------------------------------------------------------------
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    /** Capacity-1 queue: auth thread blocks on take(); UI offers the code. */
-    private final LinkedBlockingQueue<String> codeQueue = new LinkedBlockingQueue<>(1);
-    private volatile boolean cancelled = false;
+
+    /**
+     * Pending code future: when the user types a Steam Guard code in the dialog,
+     * submitGuardCode() completes this future so pollingWaitForResult() can proceed.
+     */
+    private volatile CompletableFuture<String> pendingCodeFuture = null;
 
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
     /**
-     * Begin credential login on a dedicated background thread.
+     * Begin credential login on a new background thread.
      * The SteamClient must already be connected (SteamForegroundService does this).
      */
     public void startCredentialLogin(String username, String password, AuthListener listener) {
-        cancelled = false;
-        codeQueue.clear();
+        pendingCodeFuture = null;
 
         new Thread(() -> {
             try {
@@ -83,19 +88,16 @@ public final class SteamAuthManager {
                         new SteamAuthentication(SteamRepository.getInstance().getSteamClient());
 
                 AuthSessionDetails details = new AuthSessionDetails();
-                details.username         = username;
-                details.password         = password;
-                details.clientOsType     = EOSType.AndroidUnknown;
+                details.username       = username;
+                details.password       = password;
+                details.clientOSType   = EOSType.AndroidUnknown;
                 details.deviceFriendlyName = "Android Device";
-                details.platformType     = EAuthTokenPlatformType.k_EAuthTokenPlatformType_MobileApp;
-                details.persistentSession = true;
-                details.authenticator    = buildAuthenticator(listener);
+                details.persistentSession  = true;
+                details.authenticator  = buildAuthenticator(listener);
 
                 CredentialsAuthSession session =
-                        auth.beginAuthSessionViaCredentials(details);
-                AuthPollResult result = session.pollingWaitForResult();
-
-                if (cancelled) return;
+                        auth.beginAuthSessionViaCredentials(details).get();
+                AuthPollResult result = session.pollingWaitForResult().get();
 
                 String refreshToken = result.getRefreshToken();
                 String accountName  = result.getAccountName();
@@ -105,30 +107,36 @@ public final class SteamAuthManager {
                 SteamRepository.getInstance().saveSession(finalName, refreshToken);
                 mainHandler.post(() -> listener.onSuccess(finalName, refreshToken));
 
+            } catch (java.util.concurrent.ExecutionException e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                Log.e(TAG, "Login ExecutionException", cause);
+                String msg = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+                mainHandler.post(() -> listener.onFailure(msg));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 Log.w(TAG, "Auth interrupted");
             } catch (Exception e) {
-                if (cancelled) return;
                 Log.e(TAG, "Login error", e);
-                String msg = (e.getMessage() != null) ? e.getMessage() : e.getClass().getSimpleName();
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                 mainHandler.post(() -> listener.onFailure(msg));
             }
         }, "SteamCredentialLogin").start();
     }
 
     /**
-     * Deliver a Steam Guard code (email or TOTP) to the waiting auth thread.
+     * Deliver a Steam Guard code (email or TOTP) to the waiting auth future.
      * Call from the UI after the user types the code.
      */
     public void submitGuardCode(String code) {
-        codeQueue.offer(code);
+        CompletableFuture<String> f = pendingCodeFuture;
+        if (f != null) f.complete(code);
     }
 
-    /** Cancel any pending auth and unblock the auth thread. */
+    /** Cancel any pending auth and fail the pending code future. */
     public void cancelAuth() {
-        cancelled = true;
-        codeQueue.offer(CANCEL_SENTINEL);
+        CompletableFuture<String> f = pendingCodeFuture;
+        if (f != null) f.completeExceptionally(new InterruptedException("User cancelled"));
+        pendingCodeFuture = null;
     }
 
     // -------------------------------------------------------------------------
@@ -138,34 +146,38 @@ public final class SteamAuthManager {
     private IAuthenticator buildAuthenticator(AuthListener listener) {
         return new IAuthenticator() {
 
-            /** Called when Steam wants device-confirmation (approve in mobile app). */
+            /**
+             * Called when Steam wants device-confirmation (approve in mobile app).
+             * Returns a completed future immediately — we just inform the UI.
+             */
             @Override
-            public void acceptDeviceConfirmation() {
+            public CompletableFuture<Void> acceptDeviceConfirmation() {
                 mainHandler.post(listener::onDeviceConfirmationRequired);
+                return CompletableFuture.completedFuture(null);
             }
 
             /**
              * Called when Steam Guard email code is required.
-             * Blocks the auth thread until submitGuardCode() is called from the UI.
+             * Returns a future that completes when submitGuardCode() is called from UI.
              */
             @Override
-            public String getEmailCode(String email, boolean previousCodeWrong) throws Exception {
+            public CompletableFuture<String> getEmailCode(String email, boolean previousCodeWrong) {
+                CompletableFuture<String> future = new CompletableFuture<>();
+                pendingCodeFuture = future;
                 mainHandler.post(() -> listener.onSteamGuardEmailRequired(email, previousCodeWrong));
-                String code = codeQueue.take();
-                if (CANCEL_SENTINEL.equals(code)) throw new InterruptedException("Cancelled");
-                return code;
+                return future;
             }
 
             /**
              * Called when Steam Guard TOTP code is required (mobile authenticator).
-             * Blocks the auth thread until submitGuardCode() is called from the UI.
+             * Returns a future that completes when submitGuardCode() is called from UI.
              */
             @Override
-            public String getTotpCode(boolean previousCodeWrong) throws Exception {
+            public CompletableFuture<String> getTotpCode(boolean previousCodeWrong) {
+                CompletableFuture<String> future = new CompletableFuture<>();
+                pendingCodeFuture = future;
                 mainHandler.post(() -> listener.onSteamGuardTotpRequired(previousCodeWrong));
-                String code = codeQueue.take();
-                if (CANCEL_SENTINEL.equals(code)) throw new InterruptedException("Cancelled");
-                return code;
+                return future;
             }
         };
     }

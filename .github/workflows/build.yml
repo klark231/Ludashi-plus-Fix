@@ -126,25 +126,6 @@ jobs:
           cd ..
           ls -lh javasteam.jar
 
-      - name: Inspect JavaSteam authentication API (temporary — remove after Phase 2)
-        run: |
-          echo "=== Classes in authentication package ==="
-          jar tf javasteam.jar | grep -i "authentication" | sort
-          echo "=== SteamAuthentication methods ==="
-          javap -cp javasteam.jar in.dragonbra.javasteam.steam.authentication.SteamAuthentication 2>/dev/null || echo "SteamAuthentication not found"
-          echo "=== IAuthenticator methods ==="
-          javap -cp javasteam.jar in.dragonbra.javasteam.steam.authentication.IAuthenticator 2>/dev/null || echo "IAuthenticator not found"
-          echo "=== AuthSessionDetails fields ==="
-          javap -p -cp javasteam.jar in.dragonbra.javasteam.steam.authentication.AuthSessionDetails 2>/dev/null || echo "AuthSessionDetails not found"
-          echo "=== CredentialsAuthSession methods ==="
-          javap -cp javasteam.jar in.dragonbra.javasteam.steam.authentication.CredentialsAuthSession 2>/dev/null || echo "CredentialsAuthSession not found"
-          echo "=== AuthPollResult methods ==="
-          javap -cp javasteam.jar in.dragonbra.javasteam.steam.authentication.AuthPollResult 2>/dev/null || echo "AuthPollResult not found"
-          echo "=== EAuthTokenPlatformType enum search ==="
-          jar tf javasteam.jar | grep -i "EAuthToken\|platformtype\|PlatformType" | head -10 || echo "not found"
-          echo "=== EOSType enum values (first 5 Android) ==="
-          javap -cp javasteam.jar in.dragonbra.javasteam.enums.EOSType 2>/dev/null | grep -i "android" | head -5 || echo "EOSType not found"
-
       - name: Decode base APK with apktool
         run: |
           APK=$(ls base/*.apk | head -1)
