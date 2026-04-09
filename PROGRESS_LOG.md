@@ -390,6 +390,47 @@ Same pattern as GOG fallback exe scan (`GogDownloadManager` beta40). LudashiLaun
 4. Install — depot download starts, progress updates, completes
 5. Launch — exe scan finds game exe, container picker appears, shortcut written, game accessible from Shortcuts
 
+---
+
+## Session: 2026-04-09 — QR Code Login
+
+### Goal
+Implement QR code Steam login (was a stub Toast since Phase 1).
+
+### What Changed
+
+**New: `extension/steam/SteamQrAuthManager.java`**
+- Java singleton wrapping `SteamAuthentication.beginAuthSessionViaQR()`
+- `startQrLogin(QrAuthListener)` — starts auth on background thread
+- `QrAuthListener` interface: `onQrReady(url)`, `onQrRefreshed(url)`, `onSuccess()`, `onFailure(reason)`
+- URL rotation watcher: polls `getChallengeUrl()` every 3s, notifies UI when Steam rotates the QR (~30s cycle)
+- `cancel()` — stops watcher and clears listener
+
+**Updated: `extension/steam/QrLoginActivity.kt`** (replaced Phase 1 stub)
+- 260dp QR bitmap generated via ZXing `QRCodeWriter` → `BitMatrix` → `Bitmap`
+- Auto-refreshes QR when `onQrRefreshed()` fires (URL rotation)
+- Retry button on failure
+- Cancel/back button
+- Instruction text: "Open the Steam app → ☰ → Sign in via QR code"
+
+**Updated: `.github/workflows/build.yml`**
+- Added `zxing-core-3.5.2.jar` download from Maven Central
+- Added to javac `-cp`, d8 (bundled into classes17.dex), and kotlinc `-classpath`
+
+### API Discovery
+- `QRAuthSession` → actually `QrAuthSession` (lowercase r) — caught by CI javap inspection
+- `getChallengeUrl()` ✓
+- `setChallengeUrlChanged(IChallengeUrlChanged)` exists (not used — polling approach is sufficient)
+- `beginAuthSessionViaQR(AuthSessionDetails)` ✓ (one-arg variant, no CoroutineScope needed)
+
+### Commits & Builds
+| Commit | Tag | Description | CI Run | Result |
+|---|---|---|---|---|
+| `aadfdf8` | v1.0.0-pre13 | feat: QR login + ZXing | [24192276381](https://github.com/The412Banner/Ludashi-plus/actions/runs/24192276381) | ❌ QRAuthSession wrong class name |
+| `e218eee` | v1.0.0-pre13 | ci: inspect QR auth classes | [24192519373](https://github.com/The412Banner/Ludashi-plus/actions/runs/24192519373) | ❌ (still compiling wrong name) |
+| `7d2e998` | v1.0.0-pre13 | fix: QrAuthSession + inspect methods | [24192764293](https://github.com/The412Banner/Ludashi-plus/actions/runs/24192764293) | ✅ success |
+| `97c179f` | v1.0.0-pre13 | ci: remove inspection steps | [24193131642](https://github.com/The412Banner/Ludashi-plus/actions/runs/24193131642) | ✅ **success** |
+
 *Updated automatically after every commit and build.*
 
 ---
