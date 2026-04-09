@@ -389,4 +389,4 @@ Implement PICS-based library sync: after login, resolve owned games from license
 ### Commits & Builds
 | Commit | Tag | Description | CI Run | Result |
 |---|---|---|---|---|
-| TBD | v1.0.0-pre9 | feat: Phase 4 — Steam library sync via PICS | TBD | pending |
+| `8f05b6d` | v1.0.0-pre9 | feat: Phase 4 — Steam library sync via PICS | 24181414708 | ✅ success |
