@@ -35,6 +35,11 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
     private lateinit var tvStatus: TextView
     private lateinit var progressBar: ProgressBar
 
+    private var connectWaitListener: SteamRepository.SteamEventListener? = null
+    // Pending credentials stored while waiting for connection
+    private var pendingUsername: String? = null
+    private var pendingPassword: String? = null
+
     // -------------------------------------------------------------------------
     // Lifecycle
     // -------------------------------------------------------------------------
@@ -45,6 +50,8 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
     }
 
     override fun onDestroy() {
+        connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
+        connectWaitListener = null
         super.onDestroy()
         SteamAuthManager.getInstance().cancelAuth()
     }
@@ -136,7 +143,36 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
         if (password.isEmpty())  { tvStatus.text = "Enter your password."; return }
         hideKeyboard()
         setLoading(true, "Connecting to Steam\u2026")
-        SteamAuthManager.getInstance().startCredentialLogin(username, password, this)
+
+        val repo = SteamRepository.getInstance()
+        if (repo.isConnected) {
+            SteamAuthManager.getInstance().startCredentialLogin(username, password, this)
+        } else {
+            pendingUsername = username
+            pendingPassword = password
+            val listener = object : SteamRepository.SteamEventListener {
+                override fun onEvent(event: String) {
+                    when {
+                        event == "Connected" -> {
+                            repo.removeListener(this)
+                            connectWaitListener = null
+                            val u = pendingUsername ?: return
+                            val p = pendingPassword ?: return
+                            pendingUsername = null; pendingPassword = null
+                            runOnUiThread { SteamAuthManager.getInstance().startCredentialLogin(u, p, this@SteamLoginActivity) }
+                        }
+                        event.startsWith("Disconnected") -> {
+                            repo.removeListener(this)
+                            connectWaitListener = null
+                            pendingUsername = null; pendingPassword = null
+                            runOnUiThread { onFailure("Could not connect to Steam") }
+                        }
+                    }
+                }
+            }
+            connectWaitListener = listener
+            repo.addListener(listener)
+        }
     }
 
     // -------------------------------------------------------------------------

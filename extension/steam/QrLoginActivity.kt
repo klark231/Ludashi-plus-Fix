@@ -32,6 +32,9 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
     private lateinit var btnCancel: Button
     private lateinit var btnRetry: Button
 
+    // Listener held while waiting for SteamClient to connect (cleared once connected).
+    private var connectWaitListener: SteamRepository.SteamEventListener? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
@@ -39,6 +42,8 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
     }
 
     override fun onDestroy() {
+        connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
+        connectWaitListener = null
         SteamQrAuthManager.getInstance().cancel()
         super.onDestroy()
     }
@@ -51,7 +56,31 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
         setStatus("Connecting to Steam…", loading = true)
         qrImage.setImageBitmap(null)
         btnRetry.visibility = View.GONE
-        SteamQrAuthManager.getInstance().startQrLogin(this)
+
+        val repo = SteamRepository.getInstance()
+        if (repo.isConnected) {
+            SteamQrAuthManager.getInstance().startQrLogin(this)
+        } else {
+            // SteamClient.connect() is async — wait for the Connected event.
+            val listener = object : SteamRepository.SteamEventListener {
+                override fun onEvent(event: String) {
+                    when {
+                        event == "Connected" -> {
+                            repo.removeListener(this)
+                            connectWaitListener = null
+                            runOnUiThread { SteamQrAuthManager.getInstance().startQrLogin(this@QrLoginActivity) }
+                        }
+                        event.startsWith("Disconnected") -> {
+                            repo.removeListener(this)
+                            connectWaitListener = null
+                            runOnUiThread { onFailure("Could not connect to Steam") }
+                        }
+                    }
+                }
+            }
+            connectWaitListener = listener
+            repo.addListener(listener)
+        }
     }
 
     // -------------------------------------------------------------------------
