@@ -206,7 +206,29 @@ public final class SteamRepository {
     public void connect() {
         if (steamClient == null) { Log.e(TAG, "connect() before initialize()"); return; }
         startPump();
+        startReachabilityCheck();
         steamClient.connect();
+    }
+
+    /** Quick background check — emits "Reachable" or "Unreachable" so UI can show a better error. */
+    private void startReachabilityCheck() {
+        new Thread(() -> {
+            try {
+                java.net.URL url = new java.net.URL("https://store.steampowered.com/");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestMethod("HEAD");
+                int code = conn.getResponseCode();
+                Log.i(TAG, "Steam reachability: HTTP " + code);
+                if (code > 0) emit("Reachable");
+                else emit("Unreachable:no response");
+                conn.disconnect();
+            } catch (Exception e) {
+                Log.w(TAG, "Steam unreachable: " + e.getMessage());
+                emit("Unreachable:" + e.getMessage());
+            }
+        }, "SteamReachCheck").start();
     }
 
     public void disconnect() {
@@ -234,7 +256,7 @@ public final class SteamRepository {
         if (!pumping.get() || pumpHandler == null) return;
         pumpHandler.post(() -> {
             try { if (manager != null) manager.runWaitCallbacks(500L); }
-            catch (Exception e) { Log.e(TAG, "Pump error", e); }
+            catch (Throwable t) { Log.e(TAG, "Pump error", t); }
             schedulePump();
         });
     }

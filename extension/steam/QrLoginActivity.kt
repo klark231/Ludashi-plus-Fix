@@ -34,11 +34,17 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
 
     // Listener held while waiting for SteamClient to connect (cleared once connected).
     private var connectWaitListener: SteamRepository.SteamEventListener? = null
+    private var steamReachable: Boolean? = null   // null=unknown, true=reachable, false=unreachable
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val connectTimeoutRunnable = Runnable {
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
-        onFailure("Could not reach Steam servers. Check your internet connection.")
+        val msg = when (steamReachable) {
+            true  -> "Steam servers are reachable but CM connection failed.\nTry mobile data or a VPN — port 27017 may be blocked."
+            false -> "Cannot reach Steam servers.\nCheck your internet connection."
+            null  -> "Connection timed out. Check your network."
+        }
+        onFailure(msg)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,6 +66,12 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
     // -------------------------------------------------------------------------
 
     private fun startQrAuth() {
+        // Cancel any previous wait (handles Retry being pressed before timeout fires).
+        mainHandler.removeCallbacks(connectTimeoutRunnable)
+        connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
+        connectWaitListener = null
+        steamReachable = null
+
         setStatus("Connecting to Steam…", loading = true)
         qrImage.setImageBitmap(null)
         btnRetry.visibility = View.GONE
@@ -72,6 +84,13 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
             val listener = object : SteamRepository.SteamEventListener {
                 override fun onEvent(event: String) {
                     when {
+                        event == "Reachable" -> {
+                            steamReachable = true
+                            runOnUiThread { setStatus("Connecting to Steam CM server…", loading = true) }
+                        }
+                        event.startsWith("Unreachable") -> {
+                            steamReachable = false
+                        }
                         event == "Connected" -> {
                             repo.removeListener(this)
                             connectWaitListener = null
@@ -81,15 +100,16 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
                         event.startsWith("Disconnected") -> {
                             repo.removeListener(this)
                             connectWaitListener = null
-                            runOnUiThread { onFailure("Could not connect to Steam") }
+                            mainHandler.removeCallbacks(connectTimeoutRunnable)
+                            runOnUiThread { onFailure("Disconnected from Steam.") }
                         }
                     }
                 }
             }
             connectWaitListener = listener
             repo.addListener(listener)
-            // Timeout: if not connected within 30s, show error
-            mainHandler.postDelayed(connectTimeoutRunnable, 30_000L)
+            // Timeout: if not connected within 10s, show a diagnostic error
+            mainHandler.postDelayed(connectTimeoutRunnable, 10_000L)
         }
     }
 

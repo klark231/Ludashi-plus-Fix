@@ -180,7 +180,7 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
             }
             connectWaitListener = listener
             repo.addListener(listener)
-            mainHandler.postDelayed(connectTimeoutRunnable, 30_000L)
+            mainHandler.postDelayed(connectTimeoutRunnable, 10_000L)
         }
     }
 
