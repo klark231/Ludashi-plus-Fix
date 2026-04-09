@@ -178,6 +178,10 @@ public final class SteamRepository {
             // WebSocket-only silently hangs on some networks; TCP is more reliable.
             b.withProtocolTypes(EnumSet.of(ProtocolTypes.WEB_SOCKET, ProtocolTypes.TCP));
             b.withConnectionTimeout(30_000L);
+            // REQUIRED: allow JavaSteam to fetch the CM server list from Steam's directory API.
+            // Without this, if no server list is cached, getNextServerCandidate() returns null
+            // and connect() immediately fires DisconnectedCallback without making any connection.
+            b.withDirectoryFetch(true);
         });
 
         steamClient = new SteamClient(config);
@@ -290,6 +294,7 @@ public final class SteamRepository {
     private void onConnected() {
         Log.i(TAG, "Connected to Steam CM");
         connected = true;
+        reconnectAttempts = 0;
         emit("Connected");
 
         if (isLoggedInPrefs()) {
@@ -298,11 +303,29 @@ public final class SteamRepository {
         }
     }
 
+    private volatile int reconnectAttempts = 0;
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+
     private void onDisconnected(DisconnectedCallback cb) {
-        Log.i(TAG, "Disconnected (userInitiated=" + cb.isUserInitiated() + ")");
+        Log.i(TAG, "Disconnected (userInitiated=" + cb.isUserInitiated() + ", attempt=" + reconnectAttempts + ")");
         connected = false;
         loggedIn  = false;
-        emit("Disconnected");
+        if (!cb.isUserInitiated() && pumping.get() && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            long delayMs = reconnectAttempts * 2000L;  // 2s, 4s, 6s, 8s, 10s
+            Log.i(TAG, "Auto-reconnect in " + delayMs + "ms (attempt " + reconnectAttempts + ")");
+            if (pumpHandler != null) {
+                pumpHandler.postDelayed(() -> {
+                    if (pumping.get() && !connected) {
+                        Log.i(TAG, "Auto-reconnect: calling connect()");
+                        steamClient.connect();
+                    }
+                }, delayMs);
+            }
+        } else {
+            reconnectAttempts = 0;
+            emit("Disconnected");
+        }
     }
 
     private void onLoggedOn(LoggedOnCallback cb) {
