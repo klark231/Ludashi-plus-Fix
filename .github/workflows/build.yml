@@ -166,6 +166,9 @@ jobs:
           # protobuf-java: needed to compile SteamDepotDownloader (ContentManifest.parseFrom)
           wget -q "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/3.25.4/protobuf-java-3.25.4.jar" \
             -O protobuf-java.jar
+          # zxing-core: QR code generation for QrLoginActivity
+          wget -q "https://repo1.maven.org/maven2/com/google/zxing/core/3.5.2/core-3.5.2.jar" \
+            -O zxing-core.jar
 
       - name: Compile Java store extension (GOG/Epic/Amazon + Steam) → classes17.dex
         run: |
@@ -178,7 +181,7 @@ jobs:
           # Both sets share android.jar.
           mkdir -p ext_java_classes
           javac -source 8 -target 8 \
-            -cp "$ANDROID_JAR:org-json.jar:javasteam.jar:protobuf-java.jar" \
+            -cp "$ANDROID_JAR:org-json.jar:javasteam.jar:protobuf-java.jar:zxing-core.jar" \
             -d ext_java_classes \
             extension/*.java extension/steam/*.java
           echo "Compiled $(find ext_java_classes -name '*.class' | wc -l) Java class files"
@@ -187,7 +190,8 @@ jobs:
           mkdir -p ext_java_dex
           $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/d8 \
             --release --min-api 26 --output ext_java_dex \
-            $(find ext_java_classes -name "*.class")
+            $(find ext_java_classes -name "*.class") \
+            zxing-core.jar
           ls -lh ext_java_dex/classes.dex
           echo "classes17.dex ready: $(du -sh ext_java_dex/classes.dex | cut -f1)"
 
@@ -227,7 +231,7 @@ jobs:
           KOTLIN_STDLIB="$HOME/kotlinc/lib/kotlin-stdlib.jar"
           kotlinc \
             -no-stdlib \
-            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB:ext_java_classes" \
+            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB:ext_java_classes:zxing-core.jar" \
             -d ext_kotlin_classes \
             $KT_FILES
           echo "Kotlin compilation done: $(find ext_kotlin_classes -name '*.class' | wc -l) class files"
