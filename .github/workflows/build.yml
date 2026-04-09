@@ -126,6 +126,27 @@ jobs:
           cd ..
           ls -lh javasteam.jar
 
+      - name: Inspect PICS API (temp — remove after Phase 4)
+        run: |
+          echo "=== SteamApps methods ==="
+          jar tf javasteam.jar | grep "SteamApps" | head -5
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.SteamApps 2>/dev/null \
+            | grep -i "pics\|license\|product" || true
+          echo "=== PICSProductInfoCallback ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.callback.PICSProductInfoCallback 2>/dev/null || true
+          echo "=== PICSRequest ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest 2>/dev/null || true
+          echo "=== AsyncJobMultiple ==="
+          AJMCLASS=$(jar tf javasteam.jar | grep -i "AsyncJobMultiple" | head -1 | sed 's|/|.|g;s|\.class$||')
+          echo "Class: $AJMCLASS"
+          javap -p -classpath javasteam.jar "$AJMCLASS" 2>/dev/null || true
+          echo "=== LicenseListCallback ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback 2>/dev/null || true
+          echo "=== LicenseListCallback.License (inner) ==="
+          javap -p -classpath javasteam.jar 'in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback$License' 2>/dev/null || true
+          echo "=== KeyValue ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.types.KeyValue 2>/dev/null | head -40 || true
+
       - name: Decode base APK with apktool
         run: |
           APK=$(ls base/*.apk | head -1)
