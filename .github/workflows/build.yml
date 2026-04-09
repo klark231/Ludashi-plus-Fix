@@ -206,6 +206,11 @@ jobs:
             | sort -V | tail -1)
           BUILD_TOOLS=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)
 
+          # Strip Kotlin module metadata from javasteam.jar so kotlinc 1.9.x doesn't error
+          # on "metadata version 2.2.0, expected 1.9.0". The .class files still work fine
+          # as Java bytecode; only the Kotlin metadata is removed.
+          zip -d javasteam.jar 'META-INF/*.kotlin_module' 2>/dev/null || true
+
           mkdir -p ext_kotlin_classes
           KT_FILES=$(find extension/steam -name "*.kt" | sort)
           echo "Compiling Kotlin files:"
@@ -214,10 +219,12 @@ jobs:
           # -no-stdlib: don't auto-include stdlib in the output (it's already in the base APK).
           # But we still need it on the COMPILATION classpath so built-in types resolve.
           # kotlin-stdlib.jar lives in $HOME/kotlinc/lib/ from the unzipped compiler distribution.
+          # ext_java_classes: SteamRepository.java was compiled in the Java step — Kotlin files
+          # reference SteamRepository so it must be on the Kotlin classpath.
           KOTLIN_STDLIB="$HOME/kotlinc/lib/kotlin-stdlib.jar"
           kotlinc \
             -no-stdlib \
-            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB" \
+            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB:ext_java_classes" \
             -d ext_kotlin_classes \
             $KT_FILES
           echo "Kotlin compilation done: $(find ext_kotlin_classes -name '*.class' | wc -l) class files"
