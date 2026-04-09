@@ -100,12 +100,9 @@ public final class LudashiLaunchBridge {
 
                 File shortcutFile = new File(desktopDir, safeName + ".desktop");
 
-                // Convert Android absolute path to Wine Z: drive path.
-                // Shortcut.java parses Exec= by looking for "wine " and running
-                // unescape() on everything after it. unescape() expects each
-                // backslash encoded as \\\\ (4 chars) in the file.
-                // e.g. /data/user/0/.../game.exe → wine Z:\\\\data\\\\user\\\\0\\\\...\\\\game.exe
-                String winPath = "Z:" + exePath.replace("/", "\\");
+                // Z: = imagefs root. Convert Android path → Z:\gog_games\...\game.exe
+                // Shortcut.java unescape() expects each \ encoded as \\\\ (4 chars) in file.
+                String winPath = GogInstallPath.toWinePath(activity, exePath);
                 String escapedWinPath = winPath.replace("\\", "\\\\\\\\");
 
                 String content = "[Desktop Entry]\n"
