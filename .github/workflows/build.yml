@@ -123,18 +123,6 @@ jobs:
           echo "Using JAR: $MAIN_JAR ($(du -sh "$MAIN_JAR" | cut -f1))"
           jar tf "$MAIN_JAR" | grep -E "SteamClient|EResult|ProtocolTypes" | head -5 || true
 
-          echo "=== QR auth classes ==="
-          jar tf "$MAIN_JAR" | grep -i "qr\|Qr" || echo "(none)"
-
-          echo "=== SteamAuthentication methods ==="
-          javap -p -classpath "$MAIN_JAR" \
-            in.dragonbra.javasteam.steam.authentication.SteamAuthentication 2>/dev/null \
-            | grep -i "qr\|session\|begin" || true
-
-          echo "=== QrAuthSession methods ==="
-          javap -p -classpath "$MAIN_JAR" \
-            in.dragonbra.javasteam.steam.authentication.QrAuthSession 2>/dev/null || true
-
           cp "$MAIN_JAR" ../javasteam.jar
           cd ..
           ls -lh javasteam.jar
