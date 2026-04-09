@@ -210,7 +210,8 @@ jobs:
             --release --min-api 26 --output ext_java_dex \
             $(find ext_java_classes -name "*.class") \
             zxing-core.jar \
-            commons-lang3.jar
+            commons-lang3.jar \
+            protobuf-java.jar
           ls -lh ext_java_dex/classes.dex
           echo "classes17.dex ready: $(du -sh ext_java_dex/classes.dex | cut -f1)"
 
