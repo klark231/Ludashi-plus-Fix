@@ -7,16 +7,25 @@ import android.os.HandlerThread;
 import android.util.Log;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import in.dragonbra.javasteam.enums.EResult;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
+import in.dragonbra.javasteam.steam.handlers.steamapps.License;
+import in.dragonbra.javasteam.steam.handlers.steamapps.PICSProductInfo;
+import in.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest;
 import in.dragonbra.javasteam.steam.handlers.steamapps.SteamApps;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback;
+import in.dragonbra.javasteam.steam.handlers.steamapps.callback.PICSProductInfoCallback;
 import in.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends;
+import in.dragonbra.javasteam.types.KeyValue;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.steam.handlers.steamuser.SteamUser;
 import in.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOffCallback;
@@ -114,11 +123,24 @@ public final class SteamRepository {
     private Handler           pumpHandler = null;
     private final AtomicBoolean pumping   = new AtomicBoolean(false);
 
-    // raw licenses for DepotDownloader (Phase 5)
-    private final List<Object> licenses = new ArrayList<>();
-    public List<Object> getLicenses() {
+    // raw licenses (kept for Phase 5 DepotDownloader)
+    private final List<License> licenses = new ArrayList<>();
+    public List<License> getLicenses() {
         synchronized (licenses) { return new ArrayList<>(licenses); }
     }
+
+    // -------------------------------------------------------------------------
+    // PICS sync state (Phase 4)
+    // -------------------------------------------------------------------------
+
+    private static final int SYNC_IDLE     = 0;
+    private static final int SYNC_PACKAGES = 1;
+    private static final int SYNC_APPS     = 2;
+    private volatile int syncPhase = SYNC_IDLE;
+
+    // Accumulated PICS responses (multiple callbacks may arrive for one request)
+    private final Map<Integer, PICSProductInfo> pendingPackages = new ConcurrentHashMap<>();
+    private final Map<Integer, PICSProductInfo> pendingApps     = new ConcurrentHashMap<>();
 
     // -------------------------------------------------------------------------
     // Initialisation
@@ -150,11 +172,12 @@ public final class SteamRepository {
     }
 
     private void registerCallbacks() {
-        manager.subscribe(ConnectedCallback.class,    cb -> onConnected());
-        manager.subscribe(DisconnectedCallback.class, this::onDisconnected);
-        manager.subscribe(LoggedOnCallback.class,     this::onLoggedOn);
-        manager.subscribe(LoggedOffCallback.class,    this::onLoggedOff);
-        manager.subscribe(LicenseListCallback.class,  this::onLicenseList);
+        manager.subscribe(ConnectedCallback.class,      cb -> onConnected());
+        manager.subscribe(DisconnectedCallback.class,   this::onDisconnected);
+        manager.subscribe(LoggedOnCallback.class,       this::onLoggedOn);
+        manager.subscribe(LoggedOffCallback.class,      this::onLoggedOff);
+        manager.subscribe(LicenseListCallback.class,    this::onLicenseList);
+        manager.subscribe(PICSProductInfoCallback.class, this::onPICSProductInfo);
     }
 
     // -------------------------------------------------------------------------
@@ -243,12 +266,134 @@ public final class SteamRepository {
     }
 
     private void onLicenseList(LicenseListCallback cb) {
-        Log.i(TAG, cb.getLicenseList().size() + " licenses received");
+        List<License> list = cb.getLicenseList();
+        Log.i(TAG, list.size() + " licenses received");
         synchronized (licenses) {
             licenses.clear();
-            licenses.addAll(cb.getLicenseList());
+            licenses.addAll(list);
         }
-        emit("LibraryProgress:0:" + cb.getLicenseList().size());
+        // Persist license records to DB
+        SteamDatabase db = SteamDatabase.getInstance();
+        db.clearLicenses();
+        for (License lic : list) {
+            long created = lic.getTimeCreated() != null ? lic.getTimeCreated().getTime() / 1000L : 0L;
+            db.upsertLicense(lic.getPackageID(), created, 0, 0);
+        }
+        emit("LibraryProgress:0:" + list.size());
+        syncPackages(list);
+    }
+
+    /** Phase 4 step 1: request PICS product info for all owned packages. */
+    private void syncPackages(List<License> licenseList) {
+        if (steamApps == null) return;
+        List<PICSRequest> pkgRequests = new ArrayList<>();
+        for (License lic : licenseList) {
+            pkgRequests.add(new PICSRequest(lic.getPackageID(), lic.getAccessToken()));
+        }
+        if (pkgRequests.isEmpty()) {
+            emit("LibrarySynced:0");
+            return;
+        }
+        syncPhase = SYNC_PACKAGES;
+        pendingPackages.clear();
+        Log.i(TAG, "PICS: requesting info for " + pkgRequests.size() + " packages");
+        steamApps.picsGetProductInfo(Collections.emptyList(), pkgRequests, false);
+    }
+
+    /** Phase 4 step 2: request PICS product info for all resolved app IDs. */
+    private void syncApps(List<Integer> appIds) {
+        if (steamApps == null || appIds.isEmpty()) {
+            syncPhase = SYNC_IDLE;
+            emit("LibrarySynced:0");
+            return;
+        }
+        syncPhase = SYNC_APPS;
+        pendingApps.clear();
+        List<PICSRequest> appRequests = new ArrayList<>();
+        for (int id : appIds) {
+            appRequests.add(new PICSRequest(id));
+        }
+        Log.i(TAG, "PICS: requesting info for " + appRequests.size() + " apps");
+        steamApps.picsGetProductInfo(appRequests, Collections.emptyList(), false);
+    }
+
+    /** Phase 4 step 3: handle PICS product info callbacks for packages and apps. */
+    private void onPICSProductInfo(PICSProductInfoCallback cb) {
+        if (syncPhase == SYNC_PACKAGES) {
+            pendingPackages.putAll(cb.getPackages());
+            if (!cb.isResponsePending()) {
+                // All package info received — extract appIds and persist mappings
+                SteamDatabase db = SteamDatabase.getInstance();
+                List<Integer> appIds = new ArrayList<>();
+                for (PICSProductInfo pkg : pendingPackages.values()) {
+                    KeyValue appidsKv = pkg.getKeyValues().get("appids");
+                    List<KeyValue> children = appidsKv.getChildren();
+                    if (children != null) {
+                        for (KeyValue child : children) {
+                            try {
+                                int appId = Integer.parseInt(child.getValue());
+                                if (!appIds.contains(appId)) appIds.add(appId);
+                                db.linkLicenseApp(pkg.getId(), appId);
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                }
+                Log.i(TAG, "PICS packages resolved " + appIds.size() + " unique app IDs");
+                emit("LibraryProgress:1:" + appIds.size());
+                syncApps(appIds);
+            }
+
+        } else if (syncPhase == SYNC_APPS) {
+            pendingApps.putAll(cb.getApps());
+            if (!cb.isResponsePending()) {
+                // All app info received — parse and store games
+                SteamDatabase db = SteamDatabase.getInstance();
+                int count = 0;
+                for (PICSProductInfo app : pendingApps.values()) {
+                    KeyValue common = app.getKeyValues().get("common");
+                    String type = common.get("type").asString().toLowerCase();
+                    if (!"game".equals(type) && !"dlc".equals(type)) continue;
+
+                    String name     = common.get("name").asString();
+                    String icon     = common.get("icon").asString();
+                    String clientIcon = common.get("clienticon").asString();
+                    if (icon.isEmpty()) icon = clientIcon;
+
+                    // Collect numeric depot IDs from the "depots" section
+                    StringBuilder depotSb = new StringBuilder();
+                    KeyValue depotsKv = app.getKeyValues().get("depots");
+                    List<KeyValue> depotChildren = depotsKv.getChildren();
+                    if (depotChildren != null) {
+                        for (KeyValue d : depotChildren) {
+                            try {
+                                Integer.parseInt(d.getName()); // validates it's an int depot ID
+                                if (depotSb.length() > 0) depotSb.append(',');
+                                depotSb.append(d.getName());
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+
+                    db.upsertGame(app.getId(), name, icon, 0L, depotSb.toString(), type);
+                    count++;
+                }
+                syncPhase = SYNC_IDLE;
+                pendingPackages.clear();
+                pendingApps.clear();
+                Log.i(TAG, "Library sync complete: " + count + " games/DLC");
+                emit("LibrarySynced:" + count);
+            }
+        }
+    }
+
+    /** Trigger a full library re-sync (e.g. from pull-to-refresh). */
+    public void syncLibrary() {
+        List<License> copy;
+        synchronized (licenses) { copy = new ArrayList<>(licenses); }
+        if (copy.isEmpty()) {
+            Log.w(TAG, "syncLibrary() called but license list is empty");
+            return;
+        }
+        syncPackages(copy);
     }
 
     // -------------------------------------------------------------------------

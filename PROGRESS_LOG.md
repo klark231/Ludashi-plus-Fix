@@ -351,3 +351,42 @@ Note: method is `getDeviceCode`, NOT `getTotpCode` — only discovered via `java
 ---
 
 *Updated automatically after every commit and build.*
+
+---
+
+## Session: 2026-04-09 — Steam Integration Phase 4 (Library Sync via PICS)
+
+### Goal
+Implement PICS-based library sync: after login, resolve owned games from license list → PICS package info → PICS app info → SQLite.
+
+### What Changed
+
+**Modified: `extension/steam/SteamRepository.java`**
+- New imports: `License`, `PICSRequest`, `PICSProductInfo`, `PICSProductInfoCallback`, `KeyValue`, `Collections`, `ConcurrentHashMap`, `AtomicInteger`
+- `licenses` field type changed from `List<Object>` to `List<License>`
+- Sync state constants: `SYNC_IDLE=0`, `SYNC_PACKAGES=1`, `SYNC_APPS=2`
+- `pendingPackages` / `pendingApps` — `ConcurrentHashMap<Integer, PICSProductInfo>` accumulators
+- Registered `PICSProductInfoCallback.class` subscriber in `registerCallbacks()`
+- `onLicenseList()` — now persists licenses to DB (`upsertLicense`) and calls `syncPackages()`
+- `syncPackages(List<License>)` — builds `PICSRequest(packageId, accessToken)` list, calls `steamApps.picsGetProductInfo(emptyList, pkgRequests, false)`
+- `onPICSProductInfo(PICSProductInfoCallback)` — two-phase switch:
+  - `SYNC_PACKAGES`: accumulates packages; on `!isResponsePending()` extracts appIds from `kv.get("appids").getChildren()`, persists `linkLicenseApp`, emits `LibraryProgress:1:<n>`, calls `syncApps()`
+  - `SYNC_APPS`: accumulates apps; on `!isResponsePending()` parses `common.name/type/icon` + depot IDs, skips non-game/non-DLC types, `upsertGame()`, emits `LibrarySynced:<count>`
+- `syncApps(List<Integer>)` — builds `PICSRequest(appId)` list, calls `picsGetProductInfo(appRequests, emptyList, false)`
+- `syncLibrary()` — public method for pull-to-refresh; re-runs `syncPackages()` from cached license list
+
+**Modified: `extension/steam/SteamGamesActivity.kt`**
+- Full programmatic ListView UI replacing Phase 1 stub
+- `SteamRepository.SteamEventListener`: handles `LibraryProgress:*` (updates status bar), `LibrarySynced:*` (reloads game list), `LoggedOut`/`Disconnected` (finishes activity)
+- Header: ← Back, "Steam Library" title, ↻ Refresh button (calls `syncLibrary()`)
+- Status bar: shows sync phase + count
+- ListView: game name + type badge (GREEN for game, ORANGE for DLC)
+- Empty state text with guidance
+
+**Modified: `.github/workflows/build.yml`**
+- Removed "Inspect PICS API (temp)" step — no longer needed
+
+### Commits & Builds
+| Commit | Tag | Description | CI Run | Result |
+|---|---|---|---|---|
+| TBD | v1.0.0-pre9 | feat: Phase 4 — Steam library sync via PICS | TBD | pending |
