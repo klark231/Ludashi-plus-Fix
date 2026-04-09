@@ -81,52 +81,30 @@ jobs:
           echo "$HOME/kotlinc/bin" >> $GITHUB_PATH
           kotlinc -version
 
-      - name: Download JavaSteam JAR via Gradle
+      - name: Build JavaSteam from source
         run: |
-          # JitPack SNAPSHOT artifacts require Gradle resolution (build-on-demand — wget 404s cold)
-          # Write a minimal build.gradle that resolves and copies the JAR
-          mkdir -p javasteam_dl
-          cat > javasteam_dl/build.gradle << 'GRADLE_EOF'
-          apply plugin: 'base'
-          repositories {
-              maven { url 'https://jitpack.io' }
-              mavenCentral()
-          }
-          configurations { steamLib }
-          dependencies {
-              // in.dragonbra:javasteam is published to JitPack with custom domain
-              steamLib('in.dragonbra:javasteam:1.8.1-SNAPSHOT') { transitive = false }
-          }
-          task copyJar(type: Copy) {
-              from configurations.steamLib
-              into project.projectDir.parent
-              rename { 'javasteam.jar' }
-          }
-          GRADLE_EOF
+          # Clone and build JavaSteam — JitPack SNAPSHOT URLs are unreliable (build-on-demand,
+          # frequently returns 404 or empty on cold cache). Building from source is the only
+          # reliable approach for a SNAPSHOT dependency.
+          git clone --depth 1 https://github.com/LossyDragon/JavaSteam javasteam_src
+          cd javasteam_src
 
-          cat > javasteam_dl/settings.gradle << 'SETTINGS_EOF'
-          rootProject.name = 'javasteam-dl'
-          SETTINGS_EOF
+          # Build the fat/shadow JAR (includes all JavaSteam classes, no transitive deps)
+          # The shadowJar task produces a self-contained JAR. Fall back to plain jar if absent.
+          if ./gradlew shadowJar --no-daemon -q 2>&1 | tail -5; then
+            JAR=$(find . -name "*-all.jar" -o -name "*shadow*.jar" 2>/dev/null \
+              | grep -v "sources\|javadoc" | head -1)
+          fi
+          if [ -z "$JAR" ] || [ ! -s "$JAR" ]; then
+            echo "shadowJar not available, trying jar task..."
+            ./gradlew jar --no-daemon -q 2>&1 | tail -5
+            JAR=$(find . -path "*/build/libs/*.jar" 2>/dev/null \
+              | grep -v "sources\|javadoc\|test" | head -1)
+          fi
 
-          echo "Resolving JavaSteam via Gradle..."
-          cd javasteam_dl && gradle copyJar --no-daemon -q 2>&1 | tail -20
+          echo "Built JAR: $JAR ($(du -sh "$JAR" | cut -f1))"
+          cp "$JAR" ../javasteam.jar
           cd ..
-
-          if [ ! -f javasteam.jar ] || [ ! -s javasteam.jar ]; then
-            echo "Gradle resolution failed, trying alternate JitPack GitHub-path URL..."
-            # JitPack also serves via com.github.{owner}/{repo} path
-            wget -q --timeout=180 \
-              "https://jitpack.io/com/github/LossyDragon/JavaSteam/1.8.1-SNAPSHOT/JavaSteam-1.8.1-SNAPSHOT.jar" \
-              -O javasteam.jar || true
-          fi
-
-          if [ ! -f javasteam.jar ] || [ ! -s javasteam.jar ]; then
-            echo "All JitPack attempts failed. Trying Maven Central snapshot..."
-            wget -q --timeout=180 \
-              "https://s01.oss.sonatype.org/content/repositories/snapshots/in/dragonbra/javasteam/1.8.1-SNAPSHOT/javasteam-1.8.1-20250101.000000-1.jar" \
-              -O javasteam.jar || true
-          fi
-
           ls -lh javasteam.jar
           echo "JavaSteam JAR: $(du -sh javasteam.jar | cut -f1)"
 
