@@ -146,6 +146,12 @@ jobs:
           javap -p -classpath javasteam.jar 'in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback$License' 2>/dev/null || true
           echo "=== KeyValue ==="
           javap -p -classpath javasteam.jar in.dragonbra.javasteam.types.KeyValue 2>/dev/null | head -40 || true
+          echo "=== License ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.License 2>/dev/null || true
+          echo "=== PICSProductInfo ==="
+          javap -p -classpath javasteam.jar in.dragonbra.javasteam.steam.handlers.steamapps.PICSProductInfo 2>/dev/null || true
+          echo "=== AsyncJobMultiple.ResultSet ==="
+          javap -p -classpath javasteam.jar 'in.dragonbra.javasteam.types.AsyncJobMultiple$ResultSet' 2>/dev/null || true
 
       - name: Decode base APK with apktool
         run: |
