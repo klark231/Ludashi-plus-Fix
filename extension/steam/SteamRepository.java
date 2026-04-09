@@ -222,7 +222,7 @@ public final class SteamRepository {
         }
 
         pPut("cell_id", cb.getCellID());
-        long sid64 = cb.getClientSteamID().convertToUInt64().toLong();
+        long sid64 = cb.getClientSteamID().convertToUInt64();
         pPut("steam_id_64", sid64);
         pPut("account_id", (int)(sid64 & 0xFFFFFFFFL));
 
