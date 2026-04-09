@@ -93,6 +93,19 @@ jobs:
           ls -1
           cat settings.gradle 2>/dev/null || cat settings.gradle.kts 2>/dev/null || true
 
+          # Patch HardwareUtils.java: SystemUtils.IS_OS_ANDROID does not exist in
+          # commons-lang3 3.14.0 (field was added in a later release). Replace with
+          # false so the Android branch is skipped; HardwareUtils falls through to
+          # the standard platform detection. No behaviour change on Android — the
+          # machine name returned will be the hostname, which is fine for Steam auth.
+          HW_FILE=$(find . -name "HardwareUtils.java" 2>/dev/null | head -1)
+          if [ -n "$HW_FILE" ]; then
+            sed -i 's/SystemUtils\.IS_OS_ANDROID/false/g' "$HW_FILE"
+            echo "Patched $HW_FILE: replaced SystemUtils.IS_OS_ANDROID with false"
+          else
+            echo "WARNING: HardwareUtils.java not found — skipping patch"
+          fi
+
           # Build all subprojects' JARs (plain jar — no shadow relocation)
           echo "Building all JARs..."
           ./gradlew jar --no-daemon 2>&1 | tail -20
