@@ -210,25 +210,47 @@ public final class SteamRepository {
         steamClient.connect();
     }
 
-    /** Quick background check — emits "Reachable" or "Unreachable" so UI can show a better error. */
+    /** Quick background check — emits events so the UI can show a specific error message. */
     private void startReachabilityCheck() {
         new Thread(() -> {
-            try {
-                java.net.URL url = new java.net.URL("https://store.steampowered.com/");
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(6000);
-                conn.setReadTimeout(6000);
-                conn.setRequestMethod("HEAD");
-                int code = conn.getResponseCode();
-                Log.i(TAG, "Steam reachability: HTTP " + code);
-                if (code > 0) emit("Reachable");
-                else emit("Unreachable:no response");
-                conn.disconnect();
-            } catch (Exception e) {
-                Log.w(TAG, "Steam unreachable: " + e.getMessage());
-                emit("Unreachable:" + e.getMessage());
+            // Step 1: test general internet (Google connectivity check — works globally)
+            boolean hasInternet = testUrl("https://connectivitycheck.gstatic.com/generate_204", 6000);
+            if (!hasInternet) {
+                // Try plain HTTP fallback in case HTTPS is blocked
+                hasInternet = testUrl("http://connectivitycheck.gstatic.com/generate_204", 6000);
+            }
+            if (!hasInternet) {
+                Log.w(TAG, "No internet connectivity");
+                emit("NoInternet");
+                return;
+            }
+            // Step 2: test Steam specifically
+            boolean steamOk = testUrl("https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0", 6000);
+            if (steamOk) {
+                Log.i(TAG, "Steam API reachable");
+                emit("Reachable");
+            } else {
+                Log.w(TAG, "Steam blocked on this network");
+                emit("SteamBlocked");
             }
         }, "SteamReachCheck").start();
+    }
+
+    private boolean testUrl(String urlStr, int timeoutMs) {
+        try {
+            java.net.URL url = new java.net.URL(urlStr);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setRequestMethod("HEAD");
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            Log.i(TAG, "testUrl " + urlStr + " → " + code);
+            return code > 0;
+        } catch (Exception e) {
+            Log.w(TAG, "testUrl " + urlStr + " failed: " + e.getMessage());
+            return false;
+        }
     }
 
     public void disconnect() {

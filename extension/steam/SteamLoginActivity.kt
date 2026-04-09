@@ -38,12 +38,19 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
     private var connectWaitListener: SteamRepository.SteamEventListener? = null
     private var pendingUsername: String? = null
     private var pendingPassword: String? = null
+    private var reachState = 0  // 0=unknown, 1=ok, 2=blocked, 3=no-internet
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val connectTimeoutRunnable = Runnable {
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
         pendingUsername = null; pendingPassword = null
-        onFailure("Could not reach Steam servers. Check your internet connection.")
+        val msg = when (reachState) {
+            1    -> "Steam CM connection timed out. Port 27017 may be blocked — try a VPN or mobile data."
+            2    -> "Steam is blocked on your network. A VPN is required."
+            3    -> "No internet connection detected."
+            else -> "Could not reach Steam servers. Check your network."
+        }
+        onFailure(msg)
     }
 
     // -------------------------------------------------------------------------
@@ -160,6 +167,9 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
             val listener = object : SteamRepository.SteamEventListener {
                 override fun onEvent(event: String) {
                     when {
+                        event == "Reachable"     -> reachState = 1
+                        event == "SteamBlocked"  -> reachState = 2
+                        event == "NoInternet"    -> reachState = 3
                         event == "Connected" -> {
                             repo.removeListener(this)
                             connectWaitListener = null
@@ -178,6 +188,7 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
                     }
                 }
             }
+            reachState = 0
             connectWaitListener = listener
             repo.addListener(listener)
             mainHandler.postDelayed(connectTimeoutRunnable, 10_000L)

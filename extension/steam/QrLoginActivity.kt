@@ -34,15 +34,16 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
 
     // Listener held while waiting for SteamClient to connect (cleared once connected).
     private var connectWaitListener: SteamRepository.SteamEventListener? = null
-    private var steamReachable: Boolean? = null   // null=unknown, true=reachable, false=unreachable
+    private var reachState = REACH_UNKNOWN
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val connectTimeoutRunnable = Runnable {
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
-        val msg = when (steamReachable) {
-            true  -> "Steam servers are reachable but CM connection failed.\nTry mobile data or a VPN — port 27017 may be blocked."
-            false -> "Cannot reach Steam servers.\nCheck your internet connection."
-            null  -> "Connection timed out. Check your network."
+        val msg = when (reachState) {
+            REACH_OK       -> "Steam servers are reachable but CM connection timed out.\nPort 27017 may be blocked — try a VPN or mobile data."
+            REACH_BLOCKED  -> "Steam servers are blocked on your network.\nYou need a VPN to use Steam here."
+            REACH_NO_NET   -> "No internet connection detected.\nCheck your Wi-Fi or mobile data."
+            else           -> "Connection timed out. Check your network."
         }
         onFailure(msg)
     }
@@ -70,7 +71,7 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
         mainHandler.removeCallbacks(connectTimeoutRunnable)
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
-        steamReachable = null
+        reachState = REACH_UNKNOWN
 
         setStatus("Connecting to Steam…", loading = true)
         qrImage.setImageBitmap(null)
@@ -85,11 +86,18 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
                 override fun onEvent(event: String) {
                     when {
                         event == "Reachable" -> {
-                            steamReachable = true
+                            reachState = REACH_OK
                             runOnUiThread { setStatus("Connecting to Steam CM server…", loading = true) }
                         }
-                        event.startsWith("Unreachable") -> {
-                            steamReachable = false
+                        event == "SteamBlocked" -> {
+                            reachState = REACH_BLOCKED
+                            runOnUiThread { setStatus("Steam is blocked on your network.\nA VPN is required.", loading = false, isError = true)
+                                btnRetry.visibility = View.VISIBLE }
+                        }
+                        event == "NoInternet" -> {
+                            reachState = REACH_NO_NET
+                            runOnUiThread { setStatus("No internet connection.", loading = false, isError = true)
+                                btnRetry.visibility = View.VISIBLE }
                         }
                         event == "Connected" -> {
                             repo.removeListener(this)
@@ -265,5 +273,10 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
         private val BG_DARK    = 0xFF1B1B1B.toInt()
         private val STEAM_BLUE = 0xFF1A3A5C.toInt()
         private val GRAY_TEXT  = 0xFFAAAAAA.toInt()
+
+        private const val REACH_UNKNOWN = 0
+        private const val REACH_OK      = 1
+        private const val REACH_BLOCKED = 2
+        private const val REACH_NO_NET  = 3
     }
 }
