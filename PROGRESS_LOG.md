@@ -258,4 +258,53 @@ JavaSteam JAR injection — the prerequisite for all subsequent Steam phases.
 
 ---
 
+## Session: 2026-04-09 — Steam Integration Phase 1 (Core Infrastructure)
+
+### Goal
+Implement Phase 1: SteamRepository, SteamForegroundService, and stub Activities.
+
+### What Changed
+
+**New files (`extension/steam/`):**
+- `SteamRepository.java` — self-contained Java singleton wrapping JavaSteam SteamClient. Java (not Kotlin) to avoid Kotlin 2.2.0 metadata incompatibility. Owns SharedPreferences directly (no Kotlin dependencies). Handles connect/disconnect, callback pump on HandlerThread, auto-login with refresh token, login/logout, license list.
+- `SteamPrefs.kt` — SharedPreferences singleton for Steam credentials (username, refreshToken, steamId64, displayName, etc.)
+- `SteamEvent.kt` — sealed class event hierarchy: Connected, Disconnected, LoggedIn, LoggedOut, LoginFailed, SteamGuardEmailRequired, SteamGuardTwoFactorRequired, QrChallengeReceived, QrExpired, LibraryProgress, LibrarySynced, DownloadProgress, DownloadComplete, DownloadFailed
+- `SteamGame.kt` — data class: appId, name, installDir, iconHash, sizeBytes, depotIds, type, isInstalled; computed headerUrl and iconUrl
+- `SteamForegroundService.kt` — foreground service using `Notification.Builder` (not NotificationCompat); starts/stops SteamRepository
+- `SteamMainActivity.kt`, `SteamLoginActivity.kt`, `QrLoginActivity.kt`, `SteamGamesActivity.kt` — Phase 1 stubs
+
+**CI (`build.yml`) changes:**
+- Java step: now compiles `extension/steam/*.java` alongside `extension/*.java`, with `javasteam.jar` on classpath
+- Kotlin step: strips `META-INF/*.kotlin_module` from javasteam.jar (avoids "Kotlin metadata 2.2.0, expected 1.9.0" error), adds `ext_java_classes` to classpath so SteamRepository (Java-compiled) resolves
+
+### Commits & Builds
+| Commit | Tag | Description | CI Run | Result |
+|---|---|---|---|---|
+| `?` | v1.0.0-pre5 | feat: Phase 1 — SteamRepository, SteamForegroundService, stub Activities | [24166218839](https://github.com/The412Banner/Ludashi-plus/actions/runs/24166218839) | ❌ -no-stdlib strips stdlib from classpath |
+| `?` | v1.0.0-pre5 | fix: add kotlin-stdlib.jar explicitly to Kotlin classpath | [24166440326](https://github.com/The412Banner/Ludashi-plus/actions/runs/24166440326) | ❌ `in` keyword in import |
+| `?` | v1.0.0-pre5 | fix: remove Kotlin SteamRepository (backtick `in` import) | [24166798629](https://github.com/The412Banner/Ludashi-plus/actions/runs/24166798629) | ❌ wrong JAR submodule |
+| `?` | v1.0.0-pre5 | fix: find correct JavaSteam library JAR from multi-module build | [24167377317](https://github.com/The412Banner/Ludashi-plus/actions/runs/24167377317) | ❌ Kotlin 2.2.0 metadata error |
+| `?` | v1.0.0-pre5 | fix: port SteamRepository to Java to resolve Kotlin 2.2.0 metadata | [24167724171](https://github.com/The412Banner/Ludashi-plus/actions/runs/24167724171) | ❌ SteamPrefs.INSTANCE not on Java classpath |
+| `55de913` | v1.0.0-pre5 | fix: SteamRepository self-contained (no SteamPrefs.INSTANCE dependency) | [24168048088](https://github.com/The412Banner/Ludashi-plus/actions/runs/24168048088) | ❌ .toLong() on primitive long |
+| `f38465d` | v1.0.0-pre5 | fix: remove .toLong() — convertToUInt64() returns primitive long | [24168181587](https://github.com/The412Banner/Ludashi-plus/actions/runs/24168181587) | ❌ SteamRepository not on Kotlin classpath |
+| `f93691a` | v1.0.0-pre5 | fix: strip javasteam Kotlin metadata; add ext_java_classes to Kotlin classpath | [24168366926](https://github.com/The412Banner/Ludashi-plus/actions/runs/24168366926) | ❌ initialize() missing Context arg |
+| `d1e2496` | v1.0.0-pre5 | fix: pass Context to SteamRepository.initialize() | [24168527418](https://github.com/The412Banner/Ludashi-plus/actions/runs/24168527418) | ✅ **success** |
+
+### Root Causes Fixed (Phase 1 debugging chain)
+1. `-no-stdlib` removed stdlib from Kotlin compile classpath → must add `$HOME/kotlinc/lib/kotlin-stdlib.jar` explicitly
+2. `in` is a Kotlin hard keyword → `import in.dragonbra.*` syntax error in Kotlin files → solution: write SteamRepository in Java instead
+3. `./gradlew shadowJar` at repo root only produced the protobuf submodule JAR (no SteamClient) → fix: `./gradlew jar` all subprojects, then search for JAR containing `SteamClient.class`
+4. JavaSteam latest master compiled with Kotlin 2.2.0; kotlinc 1.9.x rejects its metadata → Java bytecode interop has no metadata version check; writing SteamRepository in Java is the permanent fix
+5. SteamRepository.java referenced `SteamPrefs.INSTANCE` (Kotlin class compiled in a LATER step) → must be fully self-contained with its own SharedPreferences helpers
+6. `convertToUInt64()` returns primitive `long` in Java; calling `.toLong()` = dereferencing a value type
+7. `javasteam.jar` still carries Kotlin metadata headers → strip with `zip -d javasteam.jar 'META-INF/*.kotlin_module'`; `ext_java_classes` not on Kotlin classpath → SteamRepository.class invisible to kotlinc
+8. `SteamForegroundService.kt` called `initialize()` with no args; Java method requires `Context` → pass `this`
+
+### Architecture Notes
+- **SteamRepository.java is in Java, not Kotlin.** JavaSteam is compiled with Kotlin 2.2.0; kotlinc 1.9.x (matching base APK) cannot read Kotlin 2.2.0 metadata. Java bytecode interop bypasses this. This is the permanent architecture.
+- **Kotlin metadata stripped from javasteam.jar before Kotlin compile step.** Class files remain functional as Java bytecode; only the Kotlin module metadata file is removed.
+- **ext_java_classes on Kotlin classpath.** Java step runs first → Kotlin files can reference SteamRepository.
+
+---
+
 *Updated automatically after every commit and build.*
