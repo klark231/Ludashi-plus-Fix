@@ -1,5 +1,7 @@
 package com.winlator.cmod.store;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
@@ -28,19 +30,25 @@ import in.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
 /**
  * Singleton managing the JavaSteam SteamClient lifecycle.
  *
- * Written in Java to avoid Kotlin metadata version incompatibilities
- * (JavaSteam is compiled with Kotlin 2.2.0; the base APK Kotlin compiler is 1.9.x).
- * Java bytecode interop works regardless of Kotlin metadata version.
+ * Written in Java (not Kotlin) to avoid Kotlin metadata version
+ * incompatibilities: JavaSteam is compiled with Kotlin 2.2.0 while
+ * the base APK's Kotlin runtime is 1.9.24.  Java bytecode interop
+ * bypasses all metadata version checks.
+ *
+ * Self-contained: uses SharedPreferences directly (no dependency on
+ * SteamPrefs.kt which is compiled in a later Kotlin step).
  *
  * Lifecycle:
- *   SteamForegroundService.onStartCommand() → SteamRepository.initialize() → .connect()
- *   SteamForegroundService.onDestroy()     → SteamRepository.disconnect()
- *
- * Events: addListener() / removeListener(). Listeners called on pump HandlerThread.
+ *   SteamForegroundService.onStartCommand()
+ *     → SteamRepository.getInstance().initialize(ctx)
+ *     → SteamRepository.getInstance().connect()
+ *   SteamForegroundService.onDestroy()
+ *     → SteamRepository.getInstance().disconnect()
  */
 public final class SteamRepository {
 
-    private static final String TAG = "SteamRepo";
+    private static final String TAG        = "SteamRepo";
+    private static final String PREFS_NAME = "steam_prefs";
 
     // -------------------------------------------------------------------------
     // Singleton
@@ -55,10 +63,11 @@ public final class SteamRepository {
     // -------------------------------------------------------------------------
 
     public interface SteamEventListener {
-        void onEvent(Object event);
+        void onEvent(String event);
     }
 
-    private final CopyOnWriteArrayList<SteamEventListener> listeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<SteamEventListener> listeners =
+            new CopyOnWriteArrayList<>();
 
     public void addListener(SteamEventListener l)    { listeners.add(l); }
     public void removeListener(SteamEventListener l) { listeners.remove(l); }
@@ -69,11 +78,27 @@ public final class SteamRepository {
 
     private volatile boolean connected = false;
     private volatile boolean loggedIn  = false;
-    private volatile List<Object> library = new ArrayList<>();
 
     public boolean isConnected() { return connected; }
-    public boolean isLoggedIn()  { return loggedIn;  }
-    public List<Object> getLibrary() { return library; }
+    public boolean isLoggedIn()  { return loggedIn; }
+
+    // -------------------------------------------------------------------------
+    // SharedPreferences (set on initialize)
+    // -------------------------------------------------------------------------
+
+    private SharedPreferences prefs = null;
+
+    private String  pGet(String key, String  def) { return prefs != null ? prefs.getString(key, def)  : def; }
+    private long    pGet(String key, long    def) { return prefs != null ? prefs.getLong(key, def)    : def; }
+    private int     pGet(String key, int     def) { return prefs != null ? prefs.getInt(key, def)     : def; }
+
+    private void    pPut(String key, String v)  { if (prefs != null) prefs.edit().putString(key, v).apply(); }
+    private void    pPut(String key, long v)    { if (prefs != null) prefs.edit().putLong(key, v).apply(); }
+    private void    pPut(String key, int v)     { if (prefs != null) prefs.edit().putInt(key, v).apply(); }
+
+    private boolean isLoggedInPrefs() {
+        return !pGet("refresh_token", "").isEmpty() && !pGet("username", "").isEmpty();
+    }
 
     // -------------------------------------------------------------------------
     // JavaSteam instances
@@ -84,12 +109,11 @@ public final class SteamRepository {
     private SteamUser       steamUser    = null;
     private SteamApps       steamApps    = null;
 
-    // callback pump
-    private HandlerThread pumpThread = null;
-    private Handler       pumpHandler = null;
-    private final AtomicBoolean pumping = new AtomicBoolean(false);
+    private HandlerThread     pumpThread  = null;
+    private Handler           pumpHandler = null;
+    private final AtomicBoolean pumping   = new AtomicBoolean(false);
 
-    // raw license list (for DepotDownloader Phase 5)
+    // raw licenses for DepotDownloader (Phase 5)
     private final List<Object> licenses = new ArrayList<>();
     public List<Object> getLicenses() {
         synchronized (licenses) { return new ArrayList<>(licenses); }
@@ -100,7 +124,10 @@ public final class SteamRepository {
     // -------------------------------------------------------------------------
 
     /** Build SteamClient and register callbacks. Idempotent. */
-    public synchronized void initialize() {
+    public synchronized void initialize(Context ctx) {
+        if (prefs == null) {
+            prefs = ctx.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        }
         if (steamClient != null) return;
 
         SteamConfiguration config = SteamConfiguration.create(b -> {
@@ -157,8 +184,7 @@ public final class SteamRepository {
     }
 
     private void schedulePump() {
-        if (!pumping.get()) return;
-        if (pumpHandler == null) return;
+        if (!pumping.get() || pumpHandler == null) return;
         pumpHandler.post(() -> {
             try { if (manager != null) manager.runWaitCallbacks(500L); }
             catch (Exception e) { Log.e(TAG, "Pump error", e); }
@@ -175,10 +201,9 @@ public final class SteamRepository {
         connected = true;
         emit("Connected");
 
-        // Auto-login with stored refresh token
-        if (SteamPrefs.INSTANCE.isLoggedIn()) {
-            Log.i(TAG, "Auto-login as " + SteamPrefs.INSTANCE.getUsername());
-            loginWithToken(SteamPrefs.INSTANCE.getUsername(), SteamPrefs.INSTANCE.getRefreshToken());
+        if (isLoggedInPrefs()) {
+            Log.i(TAG, "Auto-login as " + pGet("username", ""));
+            loginWithToken(pGet("username", ""), pGet("refresh_token", ""));
         }
     }
 
@@ -196,14 +221,14 @@ public final class SteamRepository {
             return;
         }
 
-        SteamPrefs.INSTANCE.setCellId(cb.getCellID());
+        pPut("cell_id", cb.getCellID());
         long sid64 = cb.getClientSteamID().convertToUInt64().toLong();
-        SteamPrefs.INSTANCE.setSteamId64(sid64);
-        SteamPrefs.INSTANCE.setAccountId((int)(sid64 & 0xFFFFFFFFL));
+        pPut("steam_id_64", sid64);
+        pPut("account_id", (int)(sid64 & 0xFFFFFFFFL));
 
         loggedIn = true;
-        emit("LoggedIn:" + sid64 + ":" + SteamPrefs.INSTANCE.getDisplayName());
-        Log.i(TAG, "Logged in as " + SteamPrefs.INSTANCE.getUsername());
+        emit("LoggedIn:" + sid64);
+        Log.i(TAG, "Logged in as " + pGet("username", ""));
     }
 
     private void onLoggedOff(LoggedOffCallback cb) {
@@ -219,7 +244,6 @@ public final class SteamRepository {
             licenses.addAll(cb.getLicenseList());
         }
         emit("LibraryProgress:0:" + cb.getLicenseList().size());
-        // Full PICS sync added in Phase 4
     }
 
     // -------------------------------------------------------------------------
@@ -231,14 +255,23 @@ public final class SteamRepository {
         if (steamUser == null) return;
         LogOnDetails details = new LogOnDetails();
         details.setUsername(username);
-        details.setAccessToken(refreshToken);  // refreshToken goes in accessToken per JavaSteam
+        details.setAccessToken(refreshToken);  // refreshToken goes in accessToken field
         details.setShouldRememberPassword(true);
         steamUser.logOn(details);
     }
 
     /**
-     * First-time credential login — Phase 2 will implement full Steam auth API.
-     * Stubbed for Phase 1; emits "LoginFailed:NotImplemented".
+     * Persist credentials returned from the Steam auth session
+     * (called from Phase 2 auth flow after pollingWaitForResult).
+     */
+    public void saveSession(String username, String refreshToken) {
+        pPut("username", username);
+        pPut("refresh_token", refreshToken);
+    }
+
+    /**
+     * First-time credential login — stub for Phase 1.
+     * Phase 2 will implement the full SteamAuthentication API flow.
      */
     public void loginWithCredentials(String username, String password) {
         Log.w(TAG, "loginWithCredentials: not yet implemented (Phase 2)");
@@ -251,19 +284,16 @@ public final class SteamRepository {
 
     public void logout() {
         if (steamUser != null) steamUser.logOff();
-        SteamPrefs.INSTANCE.clear();
-        library = new ArrayList<>();
+        if (prefs != null) {
+            prefs.edit()
+                .remove("username").remove("refresh_token")
+                .remove("steam_id_64").remove("account_id")
+                .remove("display_name").remove("last_pics_change")
+                .apply();
+        }
         synchronized (licenses) { licenses.clear(); }
         Log.i(TAG, "Logged out");
-    }
-
-    // -------------------------------------------------------------------------
-    // Library (Phase 4 will populate via PICS)
-    // -------------------------------------------------------------------------
-
-    public void updateLibrary(List<Object> games) {
-        library = games;
-        emit("LibrarySynced");
+        emit("LoggedOut");
     }
 
     // -------------------------------------------------------------------------
@@ -271,7 +301,14 @@ public final class SteamRepository {
     // -------------------------------------------------------------------------
 
     public SteamClient getSteamClient() { return steamClient; }
-    public SteamApps   getSteamApps()   { return steamApps;   }
+    public SteamApps   getSteamApps()   { return steamApps; }
+
+    public String getUsername()     { return pGet("username", ""); }
+    public String getRefreshToken() { return pGet("refresh_token", ""); }
+    public long   getSteamId64()    { return pGet("steam_id_64", 0L); }
+    public int    getAccountId()    { return pGet("account_id", 0); }
+    public String getDisplayName()  { return pGet("display_name", ""); }
+    public void   setDisplayName(String name) { pPut("display_name", name); }
 
     // -------------------------------------------------------------------------
     // Internal helpers
