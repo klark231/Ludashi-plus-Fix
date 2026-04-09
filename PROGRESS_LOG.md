@@ -247,7 +247,14 @@ JavaSteam JAR injection — the prerequisite for all subsequent Steam phases.
 ### Commits & Builds
 | Commit | Tag | Description | CI Run | Result |
 |---|---|---|---|---|
-| (pending) | v1.0.0-pre4 | feat: Phase 0 — Steam CI upgrade, menu wiring, manifest entries | (pending) | 🔄 |
+| `980737a` | v1.0.0-pre4 | feat: Phase 0 — Steam CI upgrade, menu wiring, manifest entries | [24165337471](https://github.com/The412Banner/Ludashi-plus/actions/runs/24165337471) | ❌ JitPack SNAPSHOT 0 bytes |
+| `980737a` | v1.0.0-pre4 | (same — Gradle JitPack resolution also failed) | [24165396302](https://github.com/The412Banner/Ludashi-plus/actions/runs/24165396302) | ❌ javasteam.jar 0 bytes → ZipException |
+| `c5450fc` | v1.0.0-pre4 | fix: build JavaSteam from source instead of JitPack download | [24165531623](https://github.com/The412Banner/Ludashi-plus/actions/runs/24165531623) | ✅ **success** |
+
+### Root Cause Fixed (JavaSteam JAR)
+- JitPack SNAPSHOT artifacts are build-on-demand; all direct wget and Gradle+JitPack resolution attempts returned 404 or 0 bytes on a cold CI runner
+- Fix: clone LossyDragon/JavaSteam at depth 1 and run `./gradlew shadowJar` (fat JAR with all JavaSteam classes) directly in CI — fully reliable, no external artifact cache dependency
+- Steam menu item, manifest entries, and SteamPlaceholder.kt Kotlin compile all pass ✅
 
 ---
 
