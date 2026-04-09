@@ -34,6 +34,12 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
 
     // Listener held while waiting for SteamClient to connect (cleared once connected).
     private var connectWaitListener: SteamRepository.SteamEventListener? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val connectTimeoutRunnable = Runnable {
+        connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
+        connectWaitListener = null
+        onFailure("Could not reach Steam servers. Check your internet connection.")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +48,7 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(connectTimeoutRunnable)
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
         SteamQrAuthManager.getInstance().cancel()
@@ -68,6 +75,7 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
                         event == "Connected" -> {
                             repo.removeListener(this)
                             connectWaitListener = null
+                            mainHandler.removeCallbacks(connectTimeoutRunnable)
                             runOnUiThread { SteamQrAuthManager.getInstance().startQrLogin(this@QrLoginActivity) }
                         }
                         event.startsWith("Disconnected") -> {
@@ -80,6 +88,8 @@ class QrLoginActivity : Activity(), SteamQrAuthManager.QrAuthListener {
             }
             connectWaitListener = listener
             repo.addListener(listener)
+            // Timeout: if not connected within 30s, show error
+            mainHandler.postDelayed(connectTimeoutRunnable, 30_000L)
         }
     }
 

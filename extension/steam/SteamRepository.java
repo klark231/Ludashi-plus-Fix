@@ -174,7 +174,9 @@ public final class SteamRepository {
         if (steamClient != null) return;
 
         SteamConfiguration config = SteamConfiguration.create(b -> {
-            b.withProtocolTypes(EnumSet.of(ProtocolTypes.WEB_SOCKET));
+            // Allow both WebSocket AND TCP so JavaSteam can fall back if one fails.
+            // WebSocket-only silently hangs on some networks; TCP is more reliable.
+            b.withProtocolTypes(EnumSet.of(ProtocolTypes.WEB_SOCKET, ProtocolTypes.TCP));
             b.withConnectionTimeout(30_000L);
         });
 

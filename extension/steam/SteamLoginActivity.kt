@@ -36,9 +36,15 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
     private lateinit var progressBar: ProgressBar
 
     private var connectWaitListener: SteamRepository.SteamEventListener? = null
-    // Pending credentials stored while waiting for connection
     private var pendingUsername: String? = null
     private var pendingPassword: String? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val connectTimeoutRunnable = Runnable {
+        connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
+        connectWaitListener = null
+        pendingUsername = null; pendingPassword = null
+        onFailure("Could not reach Steam servers. Check your internet connection.")
+    }
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -50,6 +56,7 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(connectTimeoutRunnable)
         connectWaitListener?.let { SteamRepository.getInstance().removeListener(it) }
         connectWaitListener = null
         super.onDestroy()
@@ -156,6 +163,7 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
                         event == "Connected" -> {
                             repo.removeListener(this)
                             connectWaitListener = null
+                            mainHandler.removeCallbacks(connectTimeoutRunnable)
                             val u = pendingUsername ?: return
                             val p = pendingPassword ?: return
                             pendingUsername = null; pendingPassword = null
@@ -172,6 +180,7 @@ class SteamLoginActivity : Activity(), SteamAuthManager.AuthListener {
             }
             connectWaitListener = listener
             repo.addListener(listener)
+            mainHandler.postDelayed(connectTimeoutRunnable, 30_000L)
         }
     }
 
