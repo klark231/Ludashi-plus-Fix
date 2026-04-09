@@ -131,6 +131,10 @@ jobs:
             in.dragonbra.javasteam.steam.authentication.SteamAuthentication 2>/dev/null \
             | grep -i "qr\|session\|begin" || true
 
+          echo "=== QrAuthSession methods ==="
+          javap -p -classpath "$MAIN_JAR" \
+            in.dragonbra.javasteam.steam.authentication.QrAuthSession 2>/dev/null || true
+
           cp "$MAIN_JAR" ../javasteam.jar
           cd ..
           ls -lh javasteam.jar

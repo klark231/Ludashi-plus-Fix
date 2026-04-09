@@ -7,7 +7,7 @@ import android.util.Log;
 import in.dragonbra.javasteam.enums.EOSType;
 import in.dragonbra.javasteam.steam.authentication.AuthPollResult;
 import in.dragonbra.javasteam.steam.authentication.AuthSessionDetails;
-import in.dragonbra.javasteam.steam.authentication.QRAuthSession;
+import in.dragonbra.javasteam.steam.authentication.QrAuthSession;
 import in.dragonbra.javasteam.steam.authentication.SteamAuthentication;
 
 /**
@@ -17,7 +17,7 @@ import in.dragonbra.javasteam.steam.authentication.SteamAuthentication;
  *
  * Flow:
  *   startQrLogin(listener)
- *     → beginAuthSessionViaQR() → QRAuthSession → getChallengeUrl() → onQrReady()
+ *     → beginAuthSessionViaQR() → QrAuthSession → getChallengeUrl() → onQrReady()
  *     → background thread polls for URL changes every 3s → onQrRefreshed()
  *     → pollingWaitForResult() → onSuccess() / onFailure()
  *
@@ -83,7 +83,7 @@ public final class SteamQrAuthManager {
                 details.persistentSession  = true;
                 // No IAuthenticator needed for QR — user approves on their phone.
 
-                QRAuthSession session = auth.beginAuthSessionViaQR(details).get();
+                QrAuthSession session = auth.beginAuthSessionViaQR(details).get();
 
                 // Deliver initial URL to UI.
                 String initialUrl = session.getChallengeUrl();
@@ -139,7 +139,7 @@ public final class SteamQrAuthManager {
      * Stops automatically when the auth completes (pollingWaitForResult returns)
      * or when cancel() is called.
      */
-    private void startUrlRefreshWatcher(QRAuthSession session, QrAuthListener listener) {
+    private void startUrlRefreshWatcher(QrAuthSession session, QrAuthListener listener) {
         new Thread(() -> {
             String lastUrl = session.getChallengeUrl();
             while (!cancelled) {
