@@ -115,18 +115,32 @@ public final class SteamDepotDownloader {
             }
             Log.i(TAG, "Using CDN: " + cdnHost);
 
-            SteamDatabase db = SteamRepository.getInstance().getDatabase();
+            // Get CDN auth token for this host (required since ~2022 for chunk downloads)
+            SteamRepository repo = SteamRepository.getInstance();
+            String cdnToken = repo.getCdnAuthToken(cdnHost);
+            if (cdnToken.isEmpty()) {
+                repo.requestCdnAuthToken(appId, depots.get(0).depotId, cdnHost);
+                for (int i = 0; i < 20 && cdnToken.isEmpty(); i++) {
+                    Thread.sleep(500);
+                    cdnToken = repo.getCdnAuthToken(cdnHost);
+                }
+                // Token may still be empty for some CDN configs — proceed anyway
+                Log.i(TAG, "CDN auth token for " + cdnHost + ": " +
+                      (cdnToken.isEmpty() ? "none (proceeding without)" : "acquired"));
+            }
+
+            SteamDatabase db = repo.getDatabase();
             long[] downloaded = {0L};
             final long fTotal = totalBytes > 0 ? totalBytes : 1L;
 
             for (SteamDatabase.DepotManifestRow depot : depots) {
                 // Request depot key (non-blocking — we wait with a small poll)
-                byte[] key = SteamRepository.getInstance().getDepotKey(depot.depotId);
+                byte[] key = repo.getDepotKey(depot.depotId);
                 if (key == null) {
-                    SteamRepository.getInstance().requestDepotKey(depot.depotId, appId);
+                    repo.requestDepotKey(depot.depotId, appId);
                     for (int i = 0; i < 30 && key == null; i++) {
                         Thread.sleep(500);
-                        key = SteamRepository.getInstance().getDepotKey(depot.depotId);
+                        key = repo.getDepotKey(depot.depotId);
                     }
                     // key may still be null (unencrypted depot) — that's fine
                 }
@@ -136,9 +150,21 @@ public final class SteamDepotDownloader {
                     continue;
                 }
 
+                // Request manifest code — required to authenticate CDN manifest URL
+                long manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
+                if (manifestCode == 0L) {
+                    repo.requestManifestCode(appId, depot.depotId, depot.manifestId);
+                    for (int i = 0; i < 20 && manifestCode == 0L; i++) {
+                        Thread.sleep(500);
+                        manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
+                    }
+                    Log.i(TAG, "Manifest code for depot " + depot.depotId + ": " + manifestCode);
+                }
+
                 Log.i(TAG, "Downloading manifest for depot " + depot.depotId +
                       " manifest " + depot.manifestId);
-                byte[] manifestBytes = downloadManifest(cdnHost, depot.depotId, depot.manifestId);
+                byte[] manifestBytes = downloadManifest(cdnHost, depot.depotId,
+                                                        depot.manifestId, manifestCode);
                 if (manifestBytes == null) {
                     emitFailed(appId, "Failed to download manifest for depot " + depot.depotId);
                     return;
@@ -160,7 +186,8 @@ public final class SteamDepotDownloader {
                     try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
                         raf.setLength(fe.uncompressedSize);
                         for (ChunkEntry chunk : fe.chunks) {
-                            byte[] raw = downloadChunk(cdnHost, depot.depotId, chunk.gidHex);
+                            byte[] raw = downloadChunk(cdnHost, depot.depotId,
+                                                       chunk.gidHex, cdnToken);
                             if (raw == null) {
                                 emitFailed(appId, "Failed to download chunk " + chunk.gidHex);
                                 return;
@@ -231,10 +258,12 @@ public final class SteamDepotDownloader {
     // Manifest download + parse
     // -------------------------------------------------------------------------
 
-    private byte[] downloadManifest(String cdn, int depotId, long manifestId) {
-        // Manifest URL: https://{cdn}/depot/{depotId}/manifest/{manifestId}/5
+    private byte[] downloadManifest(String cdn, int depotId, long manifestId, long requestCode) {
+        // Manifest URL format: https://{cdn}/depot/{depotId}/manifest/{manifestId}/5/{requestCode}
+        // requestCode appended when non-zero (required since ~2022)
         String urlStr = "https://" + cdn + "/depot/" + depotId +
-                        "/manifest/" + manifestId + "/5";
+                        "/manifest/" + manifestId + "/5" +
+                        (requestCode != 0L ? "/" + requestCode : "");
         try {
             HttpURLConnection conn = openGet(urlStr);
             if (conn.getResponseCode() != 200) {
@@ -304,8 +333,9 @@ public final class SteamDepotDownloader {
     // Chunk download + decrypt + decompress
     // -------------------------------------------------------------------------
 
-    private byte[] downloadChunk(String cdn, int depotId, String chunkGidHex) {
+    private byte[] downloadChunk(String cdn, int depotId, String chunkGidHex, String cdnToken) {
         String urlStr = "https://" + cdn + "/depot/" + depotId + "/chunk/" + chunkGidHex;
+        if (!cdnToken.isEmpty()) urlStr += "?token=" + cdnToken;
         try {
             HttpURLConnection conn = openGet(urlStr);
             if (conn.getResponseCode() != 200) {

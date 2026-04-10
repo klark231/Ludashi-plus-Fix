@@ -22,8 +22,10 @@ import in.dragonbra.javasteam.steam.handlers.steamapps.License;
 import in.dragonbra.javasteam.steam.handlers.steamapps.PICSProductInfo;
 import in.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest;
 import in.dragonbra.javasteam.steam.handlers.steamapps.SteamApps;
+import in.dragonbra.javasteam.steam.handlers.steamapps.callback.CDNAuthTokenCallback;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.DepotKeyCallback;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback;
+import in.dragonbra.javasteam.steam.handlers.steamapps.callback.ManifestRequestCodeCallback;
 import in.dragonbra.javasteam.steam.handlers.steamapps.callback.PICSProductInfoCallback;
 import in.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends;
 import in.dragonbra.javasteam.types.KeyValue;
@@ -146,6 +148,40 @@ public final class SteamRepository {
     }
 
     // -------------------------------------------------------------------------
+    // Manifest request codes (required since ~2022 to authenticate CDN manifests)
+    // -------------------------------------------------------------------------
+
+    // key = "depotId:manifestId", value = request code (ulong stored as long)
+    private final Map<String, Long> manifestCodes = new ConcurrentHashMap<>();
+
+    public long getManifestCode(int depotId, long manifestId) {
+        Long code = manifestCodes.get(depotId + ":" + manifestId);
+        return code != null ? code : 0L;
+    }
+
+    public void requestManifestCode(int appId, int depotId, long manifestId) {
+        if (steamApps == null) return;
+        steamApps.getManifestRequestCode(depotId, appId, manifestId, "public");
+    }
+
+    // -------------------------------------------------------------------------
+    // CDN auth tokens (required to authenticate chunk downloads per CDN host)
+    // -------------------------------------------------------------------------
+
+    // cdnHost → auth token string
+    private final Map<String, String> cdnTokens = new ConcurrentHashMap<>();
+
+    public String getCdnAuthToken(String cdnHost) {
+        String tok = cdnTokens.get(cdnHost);
+        return tok != null ? tok : "";
+    }
+
+    public void requestCdnAuthToken(int appId, int depotId, String cdnHost) {
+        if (steamApps == null) return;
+        steamApps.getCDNAuthToken(appId, depotId, cdnHost);
+    }
+
+    // -------------------------------------------------------------------------
     // PICS sync state (Phase 4)
     // -------------------------------------------------------------------------
 
@@ -198,9 +234,11 @@ public final class SteamRepository {
         manager.subscribe(DisconnectedCallback.class,   this::onDisconnected);
         manager.subscribe(LoggedOnCallback.class,       this::onLoggedOn);
         manager.subscribe(LoggedOffCallback.class,      this::onLoggedOff);
-        manager.subscribe(LicenseListCallback.class,    this::onLicenseList);
-        manager.subscribe(PICSProductInfoCallback.class, this::onPICSProductInfo);
-        manager.subscribe(DepotKeyCallback.class,        this::onDepotKey);
+        manager.subscribe(LicenseListCallback.class,         this::onLicenseList);
+        manager.subscribe(PICSProductInfoCallback.class,     this::onPICSProductInfo);
+        manager.subscribe(DepotKeyCallback.class,            this::onDepotKey);
+        manager.subscribe(ManifestRequestCodeCallback.class, this::onManifestRequestCode);
+        manager.subscribe(CDNAuthTokenCallback.class,        this::onCdnAuthToken);
     }
 
     // -------------------------------------------------------------------------
@@ -569,6 +607,29 @@ public final class SteamRepository {
         } else {
             Log.w(TAG, "Depot key request failed for depot " + cb.getDepotID() + ": " + cb.getResult());
             emit("DepotKeyFailed:" + cb.getDepotID() + ":" + cb.getResult().name());
+        }
+    }
+
+    /** Handle manifest request code callback. Required to authenticate CDN manifest downloads. */
+    private void onManifestRequestCode(ManifestRequestCodeCallback cb) {
+        long code = cb.getManifestRequestCode();
+        if (code != 0L) {
+            manifestCodes.put(cb.getDepotID() + ":" + cb.getManifestID(), code);
+            Log.i(TAG, "Manifest code received for depot " + cb.getDepotID()
+                    + " manifest " + cb.getManifestID() + " code=" + code);
+        } else {
+            Log.w(TAG, "Manifest request code = 0 for depot " + cb.getDepotID());
+        }
+    }
+
+    /** Handle CDN auth token callback. Required to authenticate chunk downloads per CDN host. */
+    private void onCdnAuthToken(CDNAuthTokenCallback cb) {
+        if (cb.getResult() == EResult.OK) {
+            cdnTokens.put(cb.getHostName(), cb.getToken());
+            Log.i(TAG, "CDN auth token received for host " + cb.getHostName());
+        } else {
+            Log.w(TAG, "CDN auth token failed for host " + cb.getHostName()
+                    + ": " + cb.getResult());
         }
     }
 
