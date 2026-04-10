@@ -237,6 +237,25 @@ jobs:
           fi
           cp -r kotlin_enums_extract ../kotlin_enums_extract
 
+          # kotlin.coroutines.jvm.internal.SpillingKt: added in newer Kotlin stdlib versions.
+          # JavaSteam compiled with Kotlin 2.x emits references to SpillingKt for coroutine
+          # variable spilling optimisation. The base APK's older stdlib doesn't have it →
+          # NoClassDefFoundError at runtime when auth coroutines run.
+          # Extract ONLY SpillingKt.class (not the whole package — rest already in base APK).
+          SPILLING_ENTRY="kotlin/coroutines/jvm/internal/SpillingKt.class"
+          if jar tf "$KOTLIN_STDLIB" 2>/dev/null | grep -q "$SPILLING_ENTRY"; then
+            echo "Extracting SpillingKt.class from kotlinc stdlib..."
+            mkdir -p kotlin_spilling_extract
+            cd kotlin_spilling_extract
+            jar xf "$KOTLIN_STDLIB" "$SPILLING_ENTRY"
+            cd ..
+            echo "Extracted SpillingKt.class"
+          else
+            echo "SpillingKt.class not found in kotlinc stdlib — creating empty placeholder"
+            mkdir -p kotlin_spilling_extract
+          fi
+          cp -r kotlin_spilling_extract ../kotlin_spilling_extract
+
           cd ..
           ls -lh javasteam.jar protobuf-java.jar
 
@@ -310,6 +329,7 @@ jobs:
             $(find ext_java_classes -name "*.class") \
             $(find coroutines_future_extract -name "*.class") \
             $(find kotlin_enums_extract -name "*.class") \
+            $(find kotlin_spilling_extract -name "*.class") \
             zxing-core.jar \
             commons-lang3.jar \
             protobuf-java.jar
