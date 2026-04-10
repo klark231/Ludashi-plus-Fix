@@ -680,6 +680,7 @@ jobs:
 
           if gh release view "$TAG" &>/dev/null; then
             gh release upload "$TAG" "$APK_NAME" --clobber
+            gh release edit "$TAG" --draft=false --prerelease
             echo "Uploaded to existing release $TAG"
           else
             gh release create "$TAG" "$APK_NAME" \
