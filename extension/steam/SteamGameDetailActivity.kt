@@ -88,10 +88,11 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
                 val id = parts.getOrNull(1)?.toIntOrNull() ?: return
                 if (id != appId) return
                 val reason = parts.drop(2).joinToString(":")
+                val logPath = SteamDepotDownloader.getInstance().debugLogPath
                 ui.post {
                     progressBar.visibility  = View.GONE
                     progressText.visibility = View.GONE
-                    statusText.text = "Download failed: $reason"
+                    statusText.text = "Download failed: $reason\nDebug log: $logPath"
                     statusText.setTextColor(Color.parseColor("#FF5555"))
                     installBtn.isEnabled = true
                     installBtn.text = "Retry"

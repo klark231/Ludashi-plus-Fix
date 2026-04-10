@@ -6,21 +6,28 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
 import java.io.RandomAccessFile;
+import java.io.StringWriter;
 import java.lang.reflect.Constructor;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipInputStream;
@@ -60,6 +67,53 @@ public final class SteamDepotDownloader {
     private ExecutorService executor = Executors.newFixedThreadPool(3);
 
     // -------------------------------------------------------------------------
+    // Debug log — written to getExternalFilesDir/steam_debug.txt
+    // -------------------------------------------------------------------------
+
+    private File debugLogFile = null;
+
+    private void initDebugLog(Context ctx) {
+        try {
+            File dir = ctx.getExternalFilesDir(null);
+            if (dir != null) {
+                debugLogFile = new File(dir, "steam_debug.txt");
+                // Overwrite on each new install attempt
+                try (BufferedWriter w = new BufferedWriter(new FileWriter(debugLogFile, false))) {
+                    w.write("=== Steam Download Debug Log ===\n");
+                    w.write("Time: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                            .format(new Date()) + "\n\n");
+                }
+                dlog("Debug log initialized at: " + debugLogFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not create debug log: " + e.getMessage());
+        }
+    }
+
+    /** Write a line to the debug log file AND Android logcat. */
+    void dlog(String msg) {
+        Log.i(TAG, msg);
+        if (debugLogFile == null) return;
+        try (BufferedWriter w = new BufferedWriter(new FileWriter(debugLogFile, true))) {
+            w.write("[" + new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date())
+                    + "] " + msg + "\n");
+        } catch (Exception ignored) {}
+    }
+
+    /** Write an error + full stack trace to the debug log. */
+    private void dlogError(String msg, Throwable t) {
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        dlog("ERROR: " + msg + "\n" + sw);
+        Log.e(TAG, msg, t);
+    }
+
+    /** Return the path to the debug log for display in the UI. */
+    public String getDebugLogPath() {
+        return debugLogFile != null ? debugLogFile.getAbsolutePath() : "(not initialized)";
+    }
+
+    // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------
 
@@ -71,21 +125,31 @@ public final class SteamDepotDownloader {
      *   DownloadFailed:<appId>:<reason>
      */
     public void installApp(int appId, Context ctx) {
+        initDebugLog(ctx);
         SteamDatabase db    = SteamRepository.getInstance().getDatabase();
         SteamDatabase.GameRow game = db.getGame(appId);
         if (game == null) {
+            dlog("FAIL: Game " + appId + " not found in database");
             emitFailed(appId, "Game not found in database");
             return;
         }
+        dlog("Starting install: appId=" + appId + " name=" + game.name);
         List<SteamDatabase.DepotManifestRow> depots = db.getDepotManifests(appId);
+        dlog("Depot count: " + depots.size());
         if (depots.isEmpty()) {
+            dlog("FAIL: No depot manifests — try re-syncing library");
             emitFailed(appId, "No depot manifests found — try re-syncing library");
             return;
+        }
+        for (SteamDatabase.DepotManifestRow d : depots) {
+            dlog("  depot=" + d.depotId + " manifestId=" + d.manifestId
+                    + " sizeBytes=" + d.sizeBytes);
         }
 
         File installBase = new File(ctx.getExternalFilesDir(null), "steam_games");
         String installName = sanitizeDirName(game.name.isEmpty() ? "app_" + appId : game.name);
         File installDir   = new File(installBase, installName);
+        dlog("Install dir: " + installDir.getAbsolutePath());
 
         long totalSize = 0L;
         for (SteamDatabase.DepotManifestRow d : depots) totalSize += d.sizeBytes;
@@ -110,23 +174,25 @@ public final class SteamDepotDownloader {
             installDir.mkdirs();
             String cdnHost = pickCdnServer();
             if (cdnHost == null) {
+                dlog("FAIL: Could not fetch CDN server list");
                 emitFailed(appId, "Could not fetch CDN server list");
                 return;
             }
-            Log.i(TAG, "Using CDN: " + cdnHost);
+            dlog("CDN host selected: " + cdnHost);
 
             // Get CDN auth token for this host (required since ~2022 for chunk downloads)
             SteamRepository repo = SteamRepository.getInstance();
             String cdnToken = repo.getCdnAuthToken(cdnHost);
             if (cdnToken.isEmpty()) {
+                dlog("Requesting CDN auth token for " + cdnHost + " ...");
                 repo.requestCdnAuthToken(appId, depots.get(0).depotId, cdnHost);
                 for (int i = 0; i < 20 && cdnToken.isEmpty(); i++) {
                     Thread.sleep(500);
                     cdnToken = repo.getCdnAuthToken(cdnHost);
                 }
-                // Token may still be empty for some CDN configs — proceed anyway
-                Log.i(TAG, "CDN auth token for " + cdnHost + ": " +
-                      (cdnToken.isEmpty() ? "none (proceeding without)" : "acquired"));
+                dlog("CDN auth token: " + (cdnToken.isEmpty()
+                        ? "NONE (proceeding without — may cause 401 on chunks)"
+                        : "acquired (length=" + cdnToken.length() + ")"));
             }
 
             SteamDatabase db = repo.getDatabase();
@@ -134,54 +200,70 @@ public final class SteamDepotDownloader {
             final long fTotal = totalBytes > 0 ? totalBytes : 1L;
 
             for (SteamDatabase.DepotManifestRow depot : depots) {
-                // Request depot key (non-blocking — we wait with a small poll)
+                dlog("--- Depot " + depot.depotId + " manifestId=" + depot.manifestId + " ---");
+
+                // Request depot key
                 byte[] key = repo.getDepotKey(depot.depotId);
                 if (key == null) {
+                    dlog("Requesting depot key for depot " + depot.depotId + " ...");
                     repo.requestDepotKey(depot.depotId, appId);
                     for (int i = 0; i < 30 && key == null; i++) {
                         Thread.sleep(500);
                         key = repo.getDepotKey(depot.depotId);
                     }
-                    // key may still be null (unencrypted depot) — that's fine
                 }
+                dlog("Depot key: " + (key == null ? "NONE (unencrypted depot)" : "acquired"));
 
                 if (depot.manifestId == 0) {
-                    Log.w(TAG, "Depot " + depot.depotId + " has no manifest ID — skipping");
+                    dlog("SKIP: Depot has no manifest ID");
                     continue;
                 }
 
-                // Request manifest code — required to authenticate CDN manifest URL
+                // Request manifest code
                 long manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
                 if (manifestCode == 0L) {
+                    dlog("Requesting manifest request code for depot " + depot.depotId + " ...");
                     repo.requestManifestCode(appId, depot.depotId, depot.manifestId);
                     for (int i = 0; i < 20 && manifestCode == 0L; i++) {
                         Thread.sleep(500);
                         manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
                     }
-                    Log.i(TAG, "Manifest code for depot " + depot.depotId + ": " + manifestCode);
                 }
+                dlog("Manifest request code: " + (manifestCode == 0L ? "NONE (proceeding without)" : manifestCode));
 
-                Log.i(TAG, "Downloading manifest for depot " + depot.depotId +
-                      " manifest " + depot.manifestId);
+                String manifestUrl = "https://" + cdnHost + "/depot/" + depot.depotId
+                        + "/manifest/" + depot.manifestId + "/5"
+                        + (manifestCode != 0L ? "/" + manifestCode : "");
+                dlog("Fetching manifest: " + manifestUrl);
                 byte[] manifestBytes = downloadManifest(cdnHost, depot.depotId,
                                                         depot.manifestId, manifestCode);
                 if (manifestBytes == null) {
+                    dlog("FAIL: Manifest download returned null for depot " + depot.depotId);
                     emitFailed(appId, "Failed to download manifest for depot " + depot.depotId);
                     return;
                 }
+                dlog("Manifest downloaded: " + manifestBytes.length + " bytes");
 
                 List<FileEntry> files = parseManifest(manifestBytes);
-                Log.i(TAG, "Depot " + depot.depotId + ": " + files.size() + " files");
+                dlog("Manifest parsed: " + files.size() + " files");
 
+                int fileIdx = 0;
                 for (FileEntry fe : files) {
                     File outFile = new File(installDir, fe.fileName.replace('\\', '/'));
                     outFile.getParentFile().mkdirs();
 
                     if (fe.chunks.isEmpty()) {
-                        // Empty file
                         outFile.createNewFile();
                         continue;
                     }
+
+                    // Log first 3 files and then every 100th to avoid flooding
+                    if (fileIdx < 3 || fileIdx % 100 == 0) {
+                        dlog("File[" + fileIdx + "]: " + fe.fileName
+                                + " chunks=" + fe.chunks.size()
+                                + " size=" + fe.uncompressedSize);
+                    }
+                    fileIdx++;
 
                     try (RandomAccessFile raf = new RandomAccessFile(outFile, "rw")) {
                         raf.setLength(fe.uncompressedSize);
@@ -189,6 +271,8 @@ public final class SteamDepotDownloader {
                             byte[] raw = downloadChunk(cdnHost, depot.depotId,
                                                        chunk.gidHex, cdnToken);
                             if (raw == null) {
+                                dlog("FAIL: Chunk download returned null: " + chunk.gidHex
+                                        + " (file: " + fe.fileName + ")");
                                 emitFailed(appId, "Failed to download chunk " + chunk.gidHex);
                                 return;
                             }
@@ -203,16 +287,17 @@ public final class SteamDepotDownloader {
                         }
                     }
                 }
+                dlog("Depot " + depot.depotId + " complete: " + fileIdx + " files written");
             }
 
             // Mark installed
             db.markInstalled(appId, installDir.getAbsolutePath(), totalBytes);
             db.markDownloadComplete(appId);
             SteamRepository.getInstance().emit("DownloadComplete:" + appId);
-            Log.i(TAG, "Install complete for app " + appId + " at " + installDir);
+            dlog("SUCCESS: Install complete at " + installDir);
 
         } catch (Exception e) {
-            Log.e(TAG, "Download failed for app " + appId, e);
+            dlogError("Download failed for app " + appId, e);
             emitFailed(appId, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
     }
@@ -266,13 +351,16 @@ public final class SteamDepotDownloader {
                         (requestCode != 0L ? "/" + requestCode : "");
         try {
             HttpURLConnection conn = openGet(urlStr);
-            if (conn.getResponseCode() != 200) {
-                Log.w(TAG, "Manifest HTTP " + conn.getResponseCode() + " for " + urlStr);
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                dlog("Manifest HTTP " + code + " for " + urlStr);
                 return null;
             }
-            return readFully(conn.getInputStream());
+            byte[] bytes = readFully(conn.getInputStream());
+            dlog("Manifest HTTP 200 → " + bytes.length + " bytes");
+            return bytes;
         } catch (Exception e) {
-            Log.e(TAG, "Manifest download failed: " + e.getMessage());
+            dlog("Manifest fetch exception: " + e);
             return null;
         }
     }
@@ -338,13 +426,14 @@ public final class SteamDepotDownloader {
         if (!cdnToken.isEmpty()) urlStr += "?token=" + cdnToken;
         try {
             HttpURLConnection conn = openGet(urlStr);
-            if (conn.getResponseCode() != 200) {
-                Log.w(TAG, "Chunk HTTP " + conn.getResponseCode() + " for " + chunkGidHex);
+            int code = conn.getResponseCode();
+            if (code != 200) {
+                dlog("Chunk HTTP " + code + " for " + chunkGidHex + " url=" + urlStr);
                 return null;
             }
             return readFully(conn.getInputStream());
         } catch (Exception e) {
-            Log.w(TAG, "Chunk download failed " + chunkGidHex + ": " + e.getMessage());
+            dlog("Chunk fetch exception: " + chunkGidHex + " " + e);
             return null;
         }
     }
