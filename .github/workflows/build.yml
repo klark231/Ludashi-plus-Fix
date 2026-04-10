@@ -237,22 +237,29 @@ jobs:
           fi
           cp -r kotlin_enums_extract ../kotlin_enums_extract
 
-          # kotlin.coroutines.jvm.internal.SpillingKt: added in newer Kotlin stdlib versions.
-          # JavaSteam compiled with Kotlin 2.x emits references to SpillingKt for coroutine
-          # variable spilling optimisation. The base APK's older stdlib doesn't have it →
-          # NoClassDefFoundError at runtime when auth coroutines run.
-          # Extract ONLY SpillingKt.class (not the whole package — rest already in base APK).
+          # kotlin.coroutines.jvm.internal.SpillingKt: added in Kotlin 2.x stdlib.
+          # JavaSteam is compiled with Kotlin 2.x so its bytecode references SpillingKt, but
+          # the base APK ships a Kotlin 1.9.x stdlib that doesn't have it → crash at runtime.
+          # Our kotlinc is 1.9.x (matched to base APK) so we cannot extract from that stdlib.
+          # Instead, pull from the Kotlin 2.x kotlin-stdlib JAR that Gradle downloaded when
+          # building JavaSteam — same strategy as protobuf-java.jar version pinning.
           SPILLING_ENTRY="kotlin/coroutines/jvm/internal/SpillingKt.class"
-          if jar tf "$KOTLIN_STDLIB" 2>/dev/null | grep -q "$SPILLING_ENTRY"; then
-            echo "Extracting SpillingKt.class from kotlinc stdlib..."
-            mkdir -p kotlin_spilling_extract
-            cd kotlin_spilling_extract
-            jar xf "$KOTLIN_STDLIB" "$SPILLING_ENTRY"
-            cd ..
-            echo "Extracted SpillingKt.class"
+          mkdir -p kotlin_spilling_extract
+          KT2_STDLIB=$(find ~/.gradle/caches -name "kotlin-stdlib-*.jar" \
+            ! -name "*sources*" ! -name "*javadoc*" ! -name "*metadata*" 2>/dev/null \
+            | sort -V | tail -1)
+          if [ -n "$KT2_STDLIB" ]; then
+            echo "Kotlin 2.x stdlib from Gradle cache: $KT2_STDLIB"
+            if jar tf "$KT2_STDLIB" 2>/dev/null | grep -q "$SPILLING_ENTRY"; then
+              cd kotlin_spilling_extract
+              jar xf "$KT2_STDLIB" "$SPILLING_ENTRY"
+              cd ..
+              echo "Extracted SpillingKt.class from Kotlin 2.x stdlib"
+            else
+              echo "SpillingKt.class not found in Kotlin 2.x stdlib either — skipping"
+            fi
           else
-            echo "SpillingKt.class not found in kotlinc stdlib — creating empty placeholder"
-            mkdir -p kotlin_spilling_extract
+            echo "No Kotlin stdlib found in Gradle cache — skipping SpillingKt extraction"
           fi
           cp -r kotlin_spilling_extract ../kotlin_spilling_extract
 
