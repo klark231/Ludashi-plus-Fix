@@ -502,7 +502,7 @@ public final class SteamRepository {
         }
     }
 
-    /** Trigger a full library re-sync (e.g. from pull-to-refresh). */
+    /** Trigger a full library re-sync (e.g. from pull-to-refresh). Safe to call from any thread. */
     public void syncLibrary() {
         List<License> copy;
         synchronized (licenses) { copy = new ArrayList<>(licenses); }
@@ -510,21 +510,34 @@ public final class SteamRepository {
             Log.w(TAG, "syncLibrary() called but license list is empty");
             return;
         }
-        syncPackages(copy);
+        // picsGetProductInfo() does network I/O — must run on the pump background thread.
+        if (pumpHandler != null) {
+            pumpHandler.post(() -> syncPackages(copy));
+        } else {
+            new Thread(() -> syncPackages(copy), "SteamSync").start();
+        }
     }
 
     // -------------------------------------------------------------------------
     // Login
     // -------------------------------------------------------------------------
 
-    /** Auto-login using a stored refresh token. */
+    /** Auto-login using a stored refresh token. Must not be called on the main thread. */
     public void loginWithToken(String username, String refreshToken) {
         if (steamUser == null) return;
-        LogOnDetails details = new LogOnDetails();
-        details.setUsername(username);
-        details.setAccessToken(refreshToken);  // refreshToken goes in accessToken field
-        details.setShouldRememberPassword(true);
-        steamUser.logOn(details);
+        Runnable work = () -> {
+            LogOnDetails details = new LogOnDetails();
+            details.setUsername(username);
+            details.setAccessToken(refreshToken);  // refreshToken goes in accessToken field
+            details.setShouldRememberPassword(true);
+            steamUser.logOn(details);
+        };
+        // steamUser.logOn() does network I/O — must run on the pump background thread.
+        if (pumpHandler != null) {
+            pumpHandler.post(work);
+        } else {
+            new Thread(work, "SteamLogin").start();
+        }
     }
 
     /**
