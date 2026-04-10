@@ -123,7 +123,7 @@ object SteamDepotDownloader {
 
         // Sanitise game name for directory usage
         val safeName = row.name.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim()
-        val installDir = File(ctx.getExternalFilesDir(null), "steam_games/$safeName")
+        val installDir = File(File(ctx.filesDir, "imagefs/steam_games"), safeName)
         dlog("Install dir: ${installDir.absolutePath}")
 
         // total bytes from PICS size data (falls back to depot manifest sum)
