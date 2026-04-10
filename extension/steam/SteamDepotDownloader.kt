@@ -139,6 +139,8 @@ object SteamDepotDownloader {
 
         // Track bytes across all depots (DepotDownloader reports per-depot %)
         val bytesDownloaded = AtomicLong(0L)
+        // Running total — updated from chunk data when PICS size was wrong/zero
+        val totalRunning = AtomicLong(totalExpected)
 
         dlog("Constructing DepotDownloader(androidEmulation=true, maxDownloads=4, maxDecompress=4, debug=true)")
         val downloader = try {
@@ -184,9 +186,19 @@ object SteamDepotDownloader {
                 val prev = bytesDownloaded.get()
                 if (uncompressedBytes > prev) bytesDownloaded.set(uncompressedBytes)
                 val done = bytesDownloaded.get()
-                val pct = (depotPercentComplete * 100).toInt()
-                dlog("Chunk: depot=$depotId pct=$pct% cumulative=${fmtSize(done)}/${fmtSize(totalExpected)}")
-                repo.emit("DownloadProgress:$appId:$done:$totalExpected")
+
+                // If PICS gave us a bogus/zero size, back-calculate total from
+                // depotPercentComplete so progress stays 0-99% instead of 200%+
+                if (depotPercentComplete > 0f && done > 0L) {
+                    val implied = (done / depotPercentComplete).toLong()
+                    if (implied > totalRunning.get()) totalRunning.set(implied)
+                }
+                val total = totalRunning.get()
+
+                // Clamp to 99% — 100% is reserved for onDownloadCompleted
+                val pct = minOf((depotPercentComplete * 100).toInt(), 99)
+                dlog("Chunk: depot=$depotId pct=$pct% cumulative=${fmtSize(done)}/${fmtSize(total)}")
+                repo.emit("DownloadProgress:$appId:$done:$total")
                 db.updateDownloadProgress(appId, done)
             }
 
@@ -197,6 +209,9 @@ object SteamDepotDownloader {
             override fun onDownloadCompleted(item: DownloadItem) {
                 dlog("=== Download complete: appId=${item.appId} ===")
                 val finalBytes = bytesDownloaded.get()
+                val finalTotal = totalRunning.get()
+                // Emit 100% before switching to installed state
+                repo.emit("DownloadProgress:$appId:$finalTotal:$finalTotal")
                 db.markInstalled(appId, installDir.absolutePath, finalBytes)
                 repo.emit("DownloadComplete:$appId")
             }
