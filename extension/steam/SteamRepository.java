@@ -526,10 +526,13 @@ public final class SteamRepository {
                                     // Some depots use "manifest" directly (older format)
                                     manifestGid = kvStr(d.get("manifest"));
                                 }
-                                String maxSize = kvStr(d.get("maxsize"));
+                                // Modern PICS stores size at manifests/public/size (uncompressed).
+                                // Older format uses the top-level maxsize field. Try both.
+                                String sizeStr = kvStr(d.get("manifests").get("public").get("size"));
+                                if (sizeStr.isEmpty()) sizeStr = kvStr(d.get("maxsize"));
                                 long depotSize = 0L;
-                                if (!maxSize.isEmpty()) {
-                                    try { depotSize = Long.parseLong(maxSize); totalSize += depotSize; }
+                                if (!sizeStr.isEmpty()) {
+                                    try { depotSize = Long.parseLong(sizeStr); totalSize += depotSize; }
                                     catch (NumberFormatException ignored) {}
                                 }
                                 if (!manifestGid.isEmpty()) {

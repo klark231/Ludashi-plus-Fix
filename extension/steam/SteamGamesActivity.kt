@@ -133,9 +133,9 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
                 genresView.text = game.genres
                 genresView.visibility = if (game.genres.isNotEmpty()) View.VISIBLE else View.GONE
 
-                val mb = game.sizeBytes / (1024L * 1024L)
-                sizeView.text = if (mb > 0) "${mb} MB" else ""
-                sizeView.visibility = if (mb > 0) View.VISIBLE else View.GONE
+                val sizeLabel = fmtSize(game.sizeBytes)
+                sizeView.text = sizeLabel
+                sizeView.visibility = if (game.sizeBytes > 0) View.VISIBLE else View.GONE
 
                 if (game.metacriticScore > 0) {
                     metaView.text = "Metacritic: ${game.metacriticScore}"
@@ -338,6 +338,12 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).also { it.bottomMargin = dp(2) }
+    }
+
+    private fun fmtSize(bytes: Long): String = when {
+        bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0)
+        bytes >= 1_048_576L     -> "%.1f MB".format(bytes / 1_048_576.0)
+        else                    -> "%.0f KB".format(bytes / 1024.0)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
