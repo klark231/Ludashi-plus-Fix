@@ -86,7 +86,7 @@ jobs:
           # Clone and build JavaSteam.
           # JavaSteam is a multi-module Gradle project; we must find the submodule JAR
           # that contains the main library classes (SteamClient, EResult, etc.).
-          git clone --depth 1 https://github.com/LossyDragon/JavaSteam javasteam_src
+          git clone --depth 1 -b gamenative-latest https://github.com/joshuatam/JavaSteam javasteam_src
           cd javasteam_src
 
           echo "=== Project structure ==="

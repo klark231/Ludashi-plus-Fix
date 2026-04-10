@@ -174,10 +174,11 @@ public final class SteamRepository {
         if (steamClient != null) return;
 
         SteamConfiguration config = SteamConfiguration.create(b -> {
-            // TCP-only: WebSocket requires Ktor CIO engine (io.ktor.client.engine.cio.CIO)
-            // which is not bundled and causes a hard crash at runtime. TCP works on all
-            // standard networks (port 27017) and is fully supported by Steam CM servers.
-            b.withProtocolTypes(EnumSet.of(ProtocolTypes.TCP));
+            // joshuatam/JavaSteam fork uses OkHttp for WebSocket (OkHttp is already in the
+            // base Winlator APK) — no Ktor CIO engine needed, no crash. Allow both WebSocket
+            // (port 443, works through restrictive NAT/firewalls) and TCP (port 27017) so
+            // JavaSteam picks the best available connection automatically.
+            b.withProtocolTypes(EnumSet.of(ProtocolTypes.TCP, ProtocolTypes.WEB_SOCKET));
             b.withConnectionTimeout(30_000L);
             // REQUIRED: allow JavaSteam to fetch the CM server list from Steam's directory API.
             // Without this, if no server list is cached, getNextServerCandidate() returns null
