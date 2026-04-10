@@ -158,8 +158,11 @@ public final class SteamRepository {
     }
 
     public void requestManifestCode(int appId, int depotId, long manifestId) {
-        // TODO: call correct JavaSteam method once class names confirmed from JAR dump
-        // steamApps.getManifestRequestCode(depotId, appId, manifestId, "public");
+        // Not available in this JavaSteam fork — fetched via Web API in SteamDepotDownloader
+    }
+
+    public void storeManifestCode(int depotId, long manifestId, long code) {
+        manifestCodes.put(depotId + ":" + manifestId, code);
     }
 
     // -------------------------------------------------------------------------
@@ -175,8 +178,11 @@ public final class SteamRepository {
     }
 
     public void requestCdnAuthToken(int appId, int depotId, String cdnHost) {
-        // TODO: call correct JavaSteam method once class names confirmed from JAR dump
-        // steamApps.getCDNAuthToken(appId, depotId, cdnHost);
+        // Not available in this JavaSteam fork — fetched via Web API in SteamDepotDownloader
+    }
+
+    public void storeCdnAuthToken(String cdnHost, String token) {
+        cdnTokens.put(cdnHost, token);
     }
 
     // -------------------------------------------------------------------------
@@ -695,7 +701,8 @@ public final class SteamRepository {
     public SteamDatabase getDatabase()    { return SteamDatabase.getInstance(); }
 
     public String getUsername()     { return pGet("username", ""); }
-    public String getRefreshToken() { return pGet("refresh_token", ""); }
+    public String getRefreshToken()  { return pGet("refresh_token", ""); }
+    public String getAccessToken()   { return pGet("refresh_token", ""); } // refresh token doubles as bearer
     public long   getSteamId64()    { return pGet("steam_id_64", 0L); }
     public int    getAccountId()    { return pGet("account_id", 0); }
     public String getDisplayName()  { return pGet("display_name", ""); }

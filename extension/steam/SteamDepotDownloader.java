@@ -180,16 +180,14 @@ public final class SteamDepotDownloader {
             }
             dlog("CDN host selected: " + cdnHost);
 
-            // Get CDN auth token for this host (required since ~2022 for chunk downloads)
             SteamRepository repo = SteamRepository.getInstance();
+            // Fetch CDN auth token via Web API for this host + first depot
             String cdnToken = repo.getCdnAuthToken(cdnHost);
-            if (cdnToken.isEmpty()) {
-                dlog("Requesting CDN auth token for " + cdnHost + " ...");
-                repo.requestCdnAuthToken(appId, depots.get(0).depotId, cdnHost);
-                for (int i = 0; i < 20 && cdnToken.isEmpty(); i++) {
-                    Thread.sleep(500);
-                    cdnToken = repo.getCdnAuthToken(cdnHost);
-                }
+            if (cdnToken.isEmpty() && !depots.isEmpty()) {
+                dlog("Fetching CDN auth token via Web API for " + cdnHost + " ...");
+                cdnToken = fetchCdnAuthToken(appId, depots.get(0).depotId,
+                                             cdnHost, repo.getAccessToken());
+                if (!cdnToken.isEmpty()) repo.storeCdnAuthToken(cdnHost, cdnToken);
                 dlog("CDN auth token: " + (cdnToken.isEmpty()
                         ? "NONE (proceeding without — may cause 401 on chunks)"
                         : "acquired (length=" + cdnToken.length() + ")"));
@@ -219,15 +217,13 @@ public final class SteamDepotDownloader {
                     continue;
                 }
 
-                // Request manifest code
+                // Fetch manifest request code via Steam Web API
                 long manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
                 if (manifestCode == 0L) {
-                    dlog("Requesting manifest request code for depot " + depot.depotId + " ...");
-                    repo.requestManifestCode(appId, depot.depotId, depot.manifestId);
-                    for (int i = 0; i < 20 && manifestCode == 0L; i++) {
-                        Thread.sleep(500);
-                        manifestCode = repo.getManifestCode(depot.depotId, depot.manifestId);
-                    }
+                    dlog("Fetching manifest request code via Web API for depot " + depot.depotId + " ...");
+                    manifestCode = fetchManifestRequestCode(appId, depot.depotId,
+                                                            depot.manifestId, repo.getAccessToken());
+                    if (manifestCode != 0L) repo.storeManifestCode(depot.depotId, depot.manifestId, manifestCode);
                 }
                 dlog("Manifest request code: " + (manifestCode == 0L ? "NONE (proceeding without)" : manifestCode));
 
@@ -546,6 +542,89 @@ public final class SteamDepotDownloader {
 
     private static String sanitizeDirName(String name) {
         return name.replaceAll("[^a-zA-Z0-9 _.\\-]", "_").trim();
+    }
+
+    // -------------------------------------------------------------------------
+    // Steam Web API auth helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch a manifest request code via Steam Web API.
+     * Required since ~2022 to authenticate CDN manifest downloads.
+     * POST https://api.steampowered.com/IContentServerDirectoryService/GetManifestRequestCode/v1/
+     */
+    private long fetchManifestRequestCode(int appId, int depotId, long manifestId, String accessToken) {
+        if (accessToken.isEmpty()) {
+            dlog("fetchManifestRequestCode: no access token — skipping");
+            return 0L;
+        }
+        try {
+            String body = "access_token=" + accessToken
+                    + "&input_json=" + java.net.URLEncoder.encode(
+                            "{\"appid\":" + appId + ",\"depotid\":" + depotId
+                            + ",\"manifest_id\":" + manifestId + ",\"branch\":\"public\"}",
+                            "UTF-8");
+            URL url = new URL("https://api.steampowered.com/IContentServerDirectoryService/GetManifestRequestCode/v1/");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            conn.setRequestProperty("User-Agent", "Valve/Steam HTTP Client 1.0");
+            conn.getOutputStream().write(body.getBytes("UTF-8"));
+            int code = conn.getResponseCode();
+            dlog("GetManifestRequestCode HTTP " + code);
+            if (code != 200) return 0L;
+            String resp = new String(readFully(conn.getInputStream()), "UTF-8");
+            dlog("GetManifestRequestCode response: " + resp);
+            JSONObject root = new JSONObject(resp);
+            long requestCode = root.getJSONObject("response").optLong("manifest_request_code", 0L);
+            dlog("Parsed manifest_request_code: " + requestCode);
+            return requestCode;
+        } catch (Exception e) {
+            dlog("fetchManifestRequestCode exception: " + e);
+            return 0L;
+        }
+    }
+
+    /**
+     * Fetch a CDN auth token via Steam Web API.
+     * POST https://api.steampowered.com/IContentServerDirectoryService/GetCDNAuthToken/v1/
+     */
+    private String fetchCdnAuthToken(int appId, int depotId, String cdnHost, String accessToken) {
+        if (accessToken.isEmpty()) {
+            dlog("fetchCdnAuthToken: no access token — skipping");
+            return "";
+        }
+        try {
+            String body = "access_token=" + accessToken
+                    + "&input_json=" + java.net.URLEncoder.encode(
+                            "{\"appid\":" + appId + ",\"depotid\":" + depotId
+                            + ",\"host_name\":\"" + cdnHost + "\"}",
+                            "UTF-8");
+            URL url = new URL("https://api.steampowered.com/IContentServerDirectoryService/GetCDNAuthToken/v1/");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            conn.setRequestProperty("User-Agent", "Valve/Steam HTTP Client 1.0");
+            conn.getOutputStream().write(body.getBytes("UTF-8"));
+            int code = conn.getResponseCode();
+            dlog("GetCDNAuthToken HTTP " + code);
+            if (code != 200) return "";
+            String resp = new String(readFully(conn.getInputStream()), "UTF-8");
+            dlog("GetCDNAuthToken response: " + resp);
+            JSONObject root = new JSONObject(resp);
+            String token = root.getJSONObject("response").optString("token", "");
+            dlog("Parsed CDN token length: " + token.length());
+            return token;
+        } catch (Exception e) {
+            dlog("fetchCdnAuthToken exception: " + e);
+            return "";
+        }
     }
 
     private void emitFailed(int appId, String reason) {
