@@ -473,10 +473,14 @@ jobs:
             | sort -V | tail -1)
           BUILD_TOOLS=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)
 
-          # Strip Kotlin module metadata from javasteam.jar so kotlinc 1.9.x doesn't error
-          # on "metadata version 2.2.0, expected 1.9.0". The .class files still work fine
-          # as Java bytecode; only the Kotlin metadata is removed.
+          # Strip Kotlin module metadata from javasteam.jar and javasteam-depotdownloader.jar
+          # so kotlinc 1.9.x doesn't error on "metadata version 2.2.0, expected 1.9.0".
+          # The .class files still work fine as Java bytecode; only the Kotlin metadata is removed.
           zip -d javasteam.jar 'META-INF/*.kotlin_module' 2>/dev/null || true
+          zip -d javasteam-depotdownloader.jar 'META-INF/*.kotlin_module' 2>/dev/null || true
+          for dep in depot_deps/*.jar; do
+            zip -d "$dep" 'META-INF/*.kotlin_module' 2>/dev/null || true
+          done
 
           mkdir -p ext_kotlin_classes
           KT_FILES=$(find extension/steam -name "*.kt" | sort)
@@ -489,15 +493,31 @@ jobs:
             [ -s "$dep" ] && DEPOT_CP="$DEPOT_CP:$dep"
           done
 
+          # kotlinx-coroutines-core is already bundled in the base APK so we don't DEX it,
+          # but we need it on the COMPILATION classpath for SteamDepotDownloader.kt.
+          COROUTINES_JAR=$(find ~/.gradle/caches -name "kotlinx-coroutines-core-jvm-*.jar" \
+            ! -name "*sources*" ! -name "*javadoc*" 2>/dev/null | sort -V | tail -1)
+          if [ -z "$COROUTINES_JAR" ]; then
+            echo "kotlinx-coroutines-core not in Gradle cache — downloading 1.9.0 from Maven"
+            wget -q "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar" \
+              -O /tmp/coroutines-core.jar && COROUTINES_JAR="/tmp/coroutines-core.jar"
+          fi
+          echo "Coroutines JAR: $COROUTINES_JAR"
+
           # -no-stdlib: don't auto-include stdlib in the output (it's already in the base APK).
           # But we still need it on the COMPILATION classpath so built-in types resolve.
           # kotlin-stdlib.jar lives in $HOME/kotlinc/lib/ from the unzipped compiler distribution.
           # ext_java_classes: SteamRepository.java was compiled in the Java step — Kotlin files
           # reference SteamRepository so it must be on the Kotlin classpath.
+          # -Xskip-metadata-version-check: javasteam* JARs compiled with Kotlin 2.2.0 but
+          #   kotlinc here is 1.9.x (matched to base APK). Skip version check — .class files
+          #   are still valid Java bytecode and usable from Kotlin 1.9.
           KOTLIN_STDLIB="$HOME/kotlinc/lib/kotlin-stdlib.jar"
+          COROUTINES_CP=$([ -n "$COROUTINES_JAR" ] && echo ":$COROUTINES_JAR" || echo "")
           kotlinc \
             -no-stdlib \
-            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB:ext_java_classes:zxing-core.jar${DEPOT_CP}" \
+            -Xskip-metadata-version-check \
+            -classpath "$ANDROID_JAR:javasteam.jar:$KOTLIN_STDLIB:ext_java_classes:zxing-core.jar${DEPOT_CP}${COROUTINES_CP}" \
             -d ext_kotlin_classes \
             $KT_FILES
           echo "Kotlin compilation done: $(find ext_kotlin_classes -name '*.class' | wc -l) class files"
