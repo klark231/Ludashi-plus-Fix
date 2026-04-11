@@ -657,6 +657,14 @@ jobs:
           $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/zipalign \
             -f -v 4 rebuilt-unsigned.apk rebuilt-aligned.apk
 
+      - name: Upload aligned APK for variant builds
+        if: "!contains(github.ref_name, '-pre') && !contains(github.ref_name, '-beta')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebuilt-aligned
+          path: rebuilt-aligned.apk
+          retention-days: 1
+
       - name: Sign APK
         id: sign
         run: |
@@ -673,97 +681,117 @@ jobs:
           echo "Signed: $APK_NAME ($(du -sh "$APK_NAME" | cut -f1))"
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build APK variants (different package names / app labels)
-        run: |
-          BUILD_TOOLS=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)
-          BASE_PKG="com.ludashi.benchmark"
-
-          # Each entry: "SUFFIX|PACKAGE|LABEL"
-          VARIANTS=(
-            "Vanilla|com.winlator.vanilla|Winlator Ludashi+ Vanilla"
-            "PuBG|com.tencent.ig|Winlator Ludashi+ PuBG"
-            "Genshin|com.mihoyo.genshinimpact|Winlator Ludashi+ Genshin"
-            "AnTuTu|com.antutu.ABenchMark|Winlator Ludashi+ AnTuTu"
-          )
-
-          for entry in "${VARIANTS[@]}"; do
-            SUFFIX=$(echo "$entry" | cut -d'|' -f1)
-            NEW_PKG=$(echo "$entry" | cut -d'|' -f2)
-            NEW_LABEL=$(echo "$entry" | cut -d'|' -f3)
-            APK_NAME="LudashiPlus-${GITHUB_REF_NAME}-${SUFFIX}.apk"
-
-            echo "=== Building variant: $NEW_LABEL ($NEW_PKG) ==="
-
-            # Start from the already-patched + DEX-injected APK
-            cp rebuilt-aligned.apk "variant-unsigned-${SUFFIX}.apk"
-
-            # Decode variant APK
-            java -jar $HOME/bin/apktool.jar d "variant-unsigned-${SUFFIX}.apk" \
-              -o "variant_out_${SUFFIX}" -f
-
-            # Patch manifest: package attribute + all 4 com.ludashi.benchmark occurrences
-            sed -i \
-              -e "s|package=\"${BASE_PKG}\"|package=\"${NEW_PKG}\"|g" \
-              -e "s|${BASE_PKG}\.tileprovider|${NEW_PKG}.tileprovider|g" \
-              -e "s|${BASE_PKG}\.core\.WinlatorFilesProvider|${NEW_PKG}.core.WinlatorFilesProvider|g" \
-              -e "s|${BASE_PKG}\.androidx-startup|${NEW_PKG}.androidx-startup|g" \
-              "variant_out_${SUFFIX}/AndroidManifest.xml"
-
-            # Patch app label
-            sed -i \
-              -e "s|android:label=\"Winlator Ludashi+\"|android:label=\"${NEW_LABEL}\"|g" \
-              "variant_out_${SUFFIX}/AndroidManifest.xml"
-
-            # Verify patches applied
-            echo "--- Package line ---"
-            grep 'package=' "variant_out_${SUFFIX}/AndroidManifest.xml" | head -1
-            echo "--- Label line ---"
-            grep 'android:label=' "variant_out_${SUFFIX}/AndroidManifest.xml" | head -1
-            echo "--- Provider authorities ---"
-            grep 'android:authorities=' "variant_out_${SUFFIX}/AndroidManifest.xml"
-
-            # Rebuild
-            java -jar $HOME/bin/apktool.jar b "variant_out_${SUFFIX}" \
-              --use-aapt1 -o "variant-rebuilt-${SUFFIX}.apk"
-
-            # Zipalign
-            $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/zipalign \
-              -f -v 4 "variant-rebuilt-${SUFFIX}.apk" "variant-aligned-${SUFFIX}.apk"
-
-            # Sign
-            $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner sign \
-              --key testkey.pk8 \
-              --cert testkey.x509.pem \
-              --v1-signing-enabled true \
-              --v2-signing-enabled true \
-              --v3-signing-enabled true \
-              --out "$APK_NAME" \
-              "variant-aligned-${SUFFIX}.apk"
-
-            echo "Variant ready: $APK_NAME ($(du -sh "$APK_NAME" | cut -f1))"
-          done
-
       - name: Create or update GitHub release
         run: |
           APK_NAME="${{ steps.sign.outputs.apk_name }}"
           TAG="${GITHUB_REF_NAME}"
 
-          # Collect all variant APKs
-          VARIANT_APKS=$(ls LudashiPlus-${TAG}-*.apk 2>/dev/null || true)
-
           if gh release view "$TAG" &>/dev/null; then
             gh release upload "$TAG" "$APK_NAME" --clobber
-            for v in $VARIANT_APKS; do
-              gh release upload "$TAG" "$v" --clobber
-            done
             gh release edit "$TAG" --draft=false --prerelease
             echo "Uploaded to existing release $TAG"
           else
-            gh release create "$TAG" "$APK_NAME" $VARIANT_APKS \
+            gh release create "$TAG" "$APK_NAME" \
               --title "Ludashi-plus $TAG" \
               --notes "Automated build — see PROGRESS_LOG.md for details." \
               --prerelease
-            echo "Created new release $TAG with $APK_NAME and variants"
+            echo "Created new release $TAG with $APK_NAME"
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-variants:
+    needs: build
+    if: "!contains(github.ref_name, '-pre') && !contains(github.ref_name, '-beta')"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - suffix: Vanilla
+            package: com.winlator.vanilla
+            label: "Winlator Ludashi+ Vanilla"
+          - suffix: PuBG
+            package: com.tencent.ig
+            label: "Winlator Ludashi+ PuBG"
+          - suffix: Genshin
+            package: com.mihoyo.genshinimpact
+            label: "Winlator Ludashi+ Genshin"
+          - suffix: AnTuTu
+            package: com.antutu.ABenchMark
+            label: "Winlator Ludashi+ AnTuTu"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install apktool 2.9.3
+        run: |
+          mkdir -p $HOME/bin
+          wget -q "https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar" \
+            -O $HOME/bin/apktool.jar
+          wget -q "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool" \
+            -O $HOME/bin/apktool
+          chmod +x $HOME/bin/apktool
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Download aligned APK from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: rebuilt-aligned
+
+      - name: Patch manifest, rebuild, sign
+        run: |
+          BUILD_TOOLS=$(ls $ANDROID_SDK_ROOT/build-tools | sort -V | tail -1)
+          BASE_PKG="com.ludashi.benchmark"
+          NEW_PKG="${{ matrix.package }}"
+          NEW_LABEL="${{ matrix.label }}"
+          APK_NAME="LudashiPlus-${GITHUB_REF_NAME}-${{ matrix.suffix }}.apk"
+
+          echo "=== Building variant: $NEW_LABEL ($NEW_PKG) ==="
+
+          java -jar $HOME/bin/apktool.jar d rebuilt-aligned.apk -o variant_out -f
+
+          sed -i \
+            -e "s|package=\"${BASE_PKG}\"|package=\"${NEW_PKG}\"|g" \
+            -e "s|${BASE_PKG}\.tileprovider|${NEW_PKG}.tileprovider|g" \
+            -e "s|${BASE_PKG}\.core\.WinlatorFilesProvider|${NEW_PKG}.core.WinlatorFilesProvider|g" \
+            -e "s|${BASE_PKG}\.androidx-startup|${NEW_PKG}.androidx-startup|g" \
+            variant_out/AndroidManifest.xml
+
+          sed -i \
+            -e "s|android:label=\"Winlator Ludashi+\"|android:label=\"${NEW_LABEL}\"|g" \
+            variant_out/AndroidManifest.xml
+
+          echo "--- Verification ---"
+          grep 'package=' variant_out/AndroidManifest.xml | head -1
+          grep 'android:label=' variant_out/AndroidManifest.xml | head -1
+          grep 'android:authorities=' variant_out/AndroidManifest.xml
+
+          java -jar $HOME/bin/apktool.jar b variant_out --use-aapt1 -o variant-rebuilt.apk
+
+          $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/zipalign \
+            -f -v 4 variant-rebuilt.apk variant-aligned.apk
+
+          $ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner sign \
+            --key testkey.pk8 \
+            --cert testkey.x509.pem \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$APK_NAME" \
+            variant-aligned.apk
+
+          echo "Variant ready: $APK_NAME ($(du -sh "$APK_NAME" | cut -f1))"
+
+      - name: Upload variant to release
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            "LudashiPlus-${GITHUB_REF_NAME}-${{ matrix.suffix }}.apk" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
