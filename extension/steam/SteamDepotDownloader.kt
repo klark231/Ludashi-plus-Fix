@@ -91,29 +91,50 @@ object SteamDepotDownloader {
     // Public API
     // -------------------------------------------------------------------------
 
+    /** Returned by installApp() / resumeApp() — provides independent cancel and pause controls. */
+    class DownloadControl(val cancel: Runnable, val pause: Runnable)
+
     /** Java-compatible singleton accessor. */
     @JvmStatic fun getInstance(): SteamDepotDownloader = this
 
     /**
-     * Start install. Returns a Runnable that cancels the download when run.
+     * Start a fresh install. Returns a DownloadControl with cancel + pause Runnables.
      * @param threads number of parallel chunk downloads + decompression workers (4 / 8 / 16)
      */
-    fun installApp(appId: Int, ctx: Context, threads: Int = 4): Runnable {
-        val cancelled = AtomicBoolean(false)
+    fun installApp(appId: Int, ctx: Context, threads: Int = 4): DownloadControl =
+        buildControl(appId, ctx, threads, isResume = false)
+
+    /**
+     * Resume a previously paused install. Keeps the existing DB row (bytes intact).
+     * DepotDownloader will re-verify and skip already-written chunks where possible.
+     */
+    fun resumeApp(appId: Int, ctx: Context, threads: Int = 4): DownloadControl =
+        buildControl(appId, ctx, threads, isResume = true)
+
+    private fun buildControl(appId: Int, ctx: Context, threads: Int, isResume: Boolean): DownloadControl {
+        val cancelled     = AtomicBoolean(false)
+        val paused        = AtomicBoolean(false)
         val downloaderRef = AtomicReference<DepotDownloader?>(null)
 
         CoroutineScope(Dispatchers.IO).launch {
-            runInstall(appId, ctx, cancelled, downloaderRef, threads)
+            runInstall(appId, ctx, cancelled, paused, downloaderRef, threads, isResume)
         }
 
-        return Runnable {
-            if (cancelled.compareAndSet(false, true)) {
-                dlog("Cancel requested for appId=$appId")
-                downloaderRef.get()?.let { dl ->
-                    try { dl.close() } catch (_: Exception) {}
+        return DownloadControl(
+            cancel = Runnable {
+                if (cancelled.compareAndSet(false, true)) {
+                    paused.set(false)  // cancel overrides pause
+                    dlog("Cancel requested for appId=$appId")
+                    downloaderRef.get()?.let { try { it.close() } catch (_: Exception) {} }
+                }
+            },
+            pause = Runnable {
+                if (!cancelled.get() && paused.compareAndSet(false, true)) {
+                    dlog("Pause requested for appId=$appId")
+                    downloaderRef.get()?.let { try { it.close() } catch (_: Exception) {} }
                 }
             }
-        }
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -124,8 +145,10 @@ object SteamDepotDownloader {
         appId: Int,
         ctx: Context,
         cancelled: AtomicBoolean,
+        paused: AtomicBoolean,
         downloaderRef: AtomicReference<DepotDownloader?>,
         threads: Int = 4,
+        isResume: Boolean = false,
     ) {
         activeDownloads[appId] = Unit
         initDebugLog(ctx)
@@ -171,8 +194,12 @@ object SteamDepotDownloader {
         }
         dlog("Expected total: ${fmtSize(totalExpected)} (hasPicsSize=$hasPicsSize)")
 
-        // Queue in DB so UI shows progress
-        db.queueDownload(appId, totalExpected, installDir.absolutePath)
+        // Queue in DB so UI shows progress (skip reset on resume — keep existing bytes)
+        if (isResume) {
+            db.markDownloadResuming(appId)
+        } else {
+            db.queueDownload(appId, totalExpected, installDir.absolutePath)
+        }
 
         // Track bytes across all depots (DepotDownloader reports per-depot %)
         val bytesDownloaded = AtomicLong(0L)
@@ -315,13 +342,21 @@ object SteamDepotDownloader {
             dlog("Closing DepotDownloader")
             try { downloader.close() } catch (_: Exception) {}
             downloaderRef.set(null)
-            // Guarantee cancel UI reset regardless of which exception path was taken.
-            // onDownloadFailed may not fire (e.g. CancellationException bypasses it),
-            // so always emit here if cancelled and not already handled by onDownloadFailed.
-            if (cancelled.get() && !completedNormally) {
-                dlog("finally: cancelled=true — ensuring DownloadCancelled emitted")
-                db.deleteDownload(appId)
-                repo.emit("DownloadCancelled:$appId")
+            if (!completedNormally) {
+                when {
+                    paused.get() -> {
+                        // Pause path: keep files + DB row, just mark paused
+                        dlog("finally: paused=true — marking DL_PAUSED")
+                        db.markDownloadPaused(appId, bytesDownloaded.get())
+                        repo.emit("DownloadPaused:$appId")
+                    }
+                    cancelled.get() -> {
+                        // Cancel path: delete files + row
+                        dlog("finally: cancelled=true — ensuring DownloadCancelled emitted")
+                        db.deleteDownload(appId)
+                        repo.emit("DownloadCancelled:$appId")
+                    }
+                }
             }
             dlog("=== runInstall() finished ===")
         }

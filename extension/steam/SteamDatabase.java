@@ -440,6 +440,22 @@ public final class SteamDatabase extends SQLiteOpenHelper {
                 "steam_downloads", cv, "app_id = ?", new String[]{String.valueOf(appId)});
     }
 
+    public void markDownloadPaused(int appId, long bytesDownloaded) {
+        ContentValues cv = new ContentValues();
+        cv.put("status",           DL_PAUSED);
+        cv.put("bytes_downloaded", bytesDownloaded);
+        getWritableDatabase().update(
+                "steam_downloads", cv, "app_id = ?", new String[]{String.valueOf(appId)});
+    }
+
+    /** Set status back to downloading (keeps bytes_downloaded intact for UI continuity). */
+    public void markDownloadResuming(int appId) {
+        ContentValues cv = new ContentValues();
+        cv.put("status", DL_DOWNLOADING);
+        getWritableDatabase().update(
+                "steam_downloads", cv, "app_id = ?", new String[]{String.valueOf(appId)});
+    }
+
     public void markDownloadFailed(int appId, String reason) {
         ContentValues cv = new ContentValues();
         cv.put("status",    DL_FAILED);
