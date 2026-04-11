@@ -37,6 +37,15 @@ object SteamDepotDownloader {
     private const val TAG = "SteamDepot"
 
     // -------------------------------------------------------------------------
+    // Active download tracking — used by UI to detect stale DL_DOWNLOADING rows
+    // -------------------------------------------------------------------------
+
+    private val activeDownloads = java.util.concurrent.ConcurrentHashMap<Int, Unit>()
+
+    /** True if a download for this appId is currently running in this process. */
+    @JvmStatic fun isDownloading(appId: Int): Boolean = activeDownloads.containsKey(appId)
+
+    // -------------------------------------------------------------------------
     // Debug log — written to getExternalFilesDir/steam_debug.txt
     // -------------------------------------------------------------------------
 
@@ -118,6 +127,7 @@ object SteamDepotDownloader {
         downloaderRef: AtomicReference<DepotDownloader?>,
         threads: Int = 4,
     ) {
+        activeDownloads[appId] = Unit
         initDebugLog(ctx)
         dlog("=== Starting install: appId=$appId ===")
 
@@ -301,6 +311,7 @@ object SteamDepotDownloader {
             dlog("getCompletion() unexpected exception: ${e.message}")
             dlogError("getCompletion unexpected", e)
         } finally {
+            activeDownloads.remove(appId)
             dlog("Closing DepotDownloader")
             try { downloader.close() } catch (_: Exception) {}
             downloaderRef.set(null)

@@ -144,14 +144,21 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
         // Check for an active download
         val dlRow = SteamRepository.getInstance().database.getDownload(appId)
         if (dlRow != null && dlRow.status == SteamDatabase.DL_DOWNLOADING) {
-            val pct = if (dlRow.bytesTotal > 0) (dlRow.bytesDownloaded * 100 / dlRow.bytesTotal).toInt().coerceIn(0, 100) else 0
-            progressBar.visibility  = View.VISIBLE
-            progressBar.progress    = pct
-            progressText.visibility = View.VISIBLE
-            progressText.text       = "Downloading… $pct%"
-            installBtn.isEnabled    = true
-            installBtn.text         = "Cancel"
-            installBtn.setBackgroundColor(COLOR_CANCEL)
+            if (SteamDepotDownloader.isDownloading(appId)) {
+                // Legit in-progress download — show cancel button + progress
+                val pct = if (dlRow.bytesTotal > 0) (dlRow.bytesDownloaded * 100 / dlRow.bytesTotal).toInt().coerceIn(0, 100) else 0
+                progressBar.visibility  = View.VISIBLE
+                progressBar.progress    = pct
+                progressText.visibility = View.VISIBLE
+                progressText.text       = "Downloading… $pct%"
+                installBtn.isEnabled    = true
+                installBtn.text         = "Cancel"
+                installBtn.setBackgroundColor(COLOR_CANCEL)
+            } else {
+                // Stale record from a previous session (app was killed mid-download).
+                // Clean it up so the button shows "Install" correctly.
+                SteamRepository.getInstance().database.deleteDownload(appId)
+            }
         }
     }
 
