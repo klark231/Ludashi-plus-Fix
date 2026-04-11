@@ -247,9 +247,8 @@ object SteamDepotDownloader {
 
             override fun onDownloadFailed(item: DownloadItem, error: Throwable) {
                 if (cancelled.get()) {
+                    // Cancel path: finally block guarantees DownloadCancelled is emitted.
                     dlog("=== Download cancelled by user: appId=${item.appId} ===")
-                    db.deleteDownload(appId)
-                    repo.emit("DownloadCancelled:$appId")
                 } else {
                     dlog("=== Download FAILED: appId=${item.appId} ===")
                     dlogError("onDownloadFailed", error)
@@ -287,30 +286,32 @@ object SteamDepotDownloader {
         }
 
         dlog("Blocking on getCompletion().get()...")
+        var completedNormally = false
         try {
             downloader.getCompletion().get()
+            completedNormally = true
             dlog("getCompletion() returned — download finished")
         } catch (e: ExecutionException) {
-            if (cancelled.get()) {
-                // onDownloadFailed callback should have handled the cancel emit;
-                // guard in case it didn't fire
-                dlog("getCompletion() ExecutionException after cancel")
-                db.deleteDownload(appId)
-                repo.emit("DownloadCancelled:$appId")
-            } else {
-                dlog("getCompletion() ExecutionException (onDownloadFailed already called)")
-                dlogError("ExecutionException.cause", e.cause ?: e)
-            }
+            dlog("getCompletion() ExecutionException: ${e.cause?.message ?: e.message}")
+            dlogError("ExecutionException.cause", e.cause ?: e)
         } catch (e: InterruptedException) {
             dlog("getCompletion() interrupted: ${e.message}")
             Thread.currentThread().interrupt()
         } catch (e: Exception) {
-            dlog("getCompletion() unexpected exception")
+            dlog("getCompletion() unexpected exception: ${e.message}")
             dlogError("getCompletion unexpected", e)
         } finally {
             dlog("Closing DepotDownloader")
             try { downloader.close() } catch (_: Exception) {}
             downloaderRef.set(null)
+            // Guarantee cancel UI reset regardless of which exception path was taken.
+            // onDownloadFailed may not fire (e.g. CancellationException bypasses it),
+            // so always emit here if cancelled and not already handled by onDownloadFailed.
+            if (cancelled.get() && !completedNormally) {
+                dlog("finally: cancelled=true — ensuring DownloadCancelled emitted")
+                db.deleteDownload(appId)
+                repo.emit("DownloadCancelled:$appId")
+            }
             dlog("=== runInstall() finished ===")
         }
     }
