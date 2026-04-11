@@ -248,6 +248,8 @@ public final class SteamDatabase extends SQLiteOpenHelper {
         cv.put("is_installed", 0);
         cv.put("install_dir",  "");
         db.update("steam_games", cv, "app_id = ?", new String[]{String.valueOf(appId)});
+        // Invalidate in-memory cache so the library list reflects the new state immediately
+        SteamRepository.getInstance().invalidateGameCache();
     }
 
     /** All games in the library, ordered by name. */

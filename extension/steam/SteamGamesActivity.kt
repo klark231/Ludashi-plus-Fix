@@ -36,19 +36,12 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
         setContentView(buildUI())
         SteamRepository.getInstance().addListener(this)
         loadGames()
-
-        // If already logged in but DB is empty (sync fired before Activity opened),
-        // kick off a re-sync immediately.
-        val repo = SteamRepository.getInstance()
-        if (games.isEmpty() && repo.isLoggedIn) {
-            statusText.text = "Syncing library…"
-            repo.syncLibrary()
-        }
+        maybeAutoSync()
     }
 
     override fun onResume() {
         super.onResume()
-        // Refresh list when returning from detail screen so installed state is current
+        // Refresh list from cache when returning from detail screen (installed state may have changed)
         loadGames()
     }
 
@@ -107,22 +100,43 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
     // -------------------------------------------------------------------------
 
     private fun loadGames() {
-        val db = try {
-            SteamRepository.getInstance().database
+        val repo = try {
+            SteamRepository.getInstance()
         } catch (e: IllegalStateException) {
-            // Process was restarted (e.g. after a crash) without going through
-            // SteamMainActivity — SteamRepository/SteamDatabase not initialised.
-            // Redirect to the entry point so the user can log back in.
+            // Process was restarted without going through SteamMainActivity.
             startActivity(android.content.Intent(this, SteamMainActivity::class.java))
             finish()
             return
         }
-        val rows = db.allGames
+        // Use in-memory cache — avoids a SQLite read on every resume/rotate.
+        // Cache is invalidated on LibrarySynced, DownloadComplete, DownloadCancelled,
+        // and markUninstalled(), so installed state is always current.
+        val rows = repo.getCachedGameRows()
         games = rows
             .filter { it.type == "game" }
             .map { SteamGame.fromGameRow(it) }
             .sortedBy { it.name.lowercase() }
+        if (games.isNotEmpty()) {
+            statusText.text = "${games.size} games in library"
+        }
         refreshList()
+    }
+
+    /**
+     * Auto-sync rules:
+     *  - Always sync if the library is empty (new login or wiped DB)
+     *  - Otherwise sync only if the last sync was more than 4 hours ago
+     *  - Never auto-sync if already syncing or not logged in
+     */
+    private fun maybeAutoSync() {
+        val repo = SteamRepository.getInstance()
+        if (!repo.isLoggedIn) return
+        val staleThresholdSec = 4 * 60 * 60L  // 4 hours
+        val elapsed = System.currentTimeMillis() / 1000L - repo.lastSyncTime
+        if (games.isEmpty() || elapsed > staleThresholdSec) {
+            statusText.text = if (games.isEmpty()) "Syncing library…" else "Refreshing library…"
+            repo.syncLibrary()
+        }
     }
 
     private fun refreshList() {

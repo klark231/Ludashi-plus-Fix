@@ -171,6 +171,11 @@ public final class SteamRepository {
         cachedGameRows = null;
     }
 
+    /** Seconds since epoch of last successful PICS library sync. 0 = never. */
+    public long getLastSyncTime() { return pGet("last_sync_time", 0L); }
+
+    private void recordSyncTime() { pPut("last_sync_time", System.currentTimeMillis() / 1000L); }
+
     // -------------------------------------------------------------------------
     // Pluvia handlers: SteamCloud + SteamUserStats (exposed for SteamCloudSync
     // and SteamAppTicket which need them after login)
@@ -632,6 +637,7 @@ public final class SteamRepository {
                 syncPhase = SYNC_IDLE;
                 pendingPackages.clear();
                 pendingApps.clear();
+                recordSyncTime();
                 Log.i(TAG, "Library sync complete: " + count + " apps");
                 emit("LibrarySynced:" + count);
             }
