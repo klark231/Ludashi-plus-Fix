@@ -49,8 +49,8 @@
         <activity android:exported="false" android:name="com.winlator.cmod.store.SteamMainActivity" android:theme="@style/AppTheme.Dark"/>
         <activity android:exported="false" android:name="com.winlator.cmod.store.SteamLoginActivity" android:theme="@style/AppTheme.Dark"/>
         <activity android:exported="false" android:name="com.winlator.cmod.store.QrLoginActivity" android:theme="@style/AppTheme.Dark"/>
-        <activity android:exported="false" android:name="com.winlator.cmod.store.SteamGamesActivity" android:theme="@style/AppTheme.Dark"/>
-        <activity android:exported="false" android:name="com.winlator.cmod.store.SteamGameDetailActivity" android:theme="@style/AppTheme.Dark"/>
+        <activity android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:name="com.winlator.cmod.store.SteamGamesActivity" android:screenOrientation="fullSensor" android:theme="@style/AppTheme.Dark"/>
+        <activity android:configChanges="orientation|screenSize|keyboardHidden" android:exported="false" android:name="com.winlator.cmod.store.SteamGameDetailActivity" android:screenOrientation="fullSensor" android:theme="@style/AppTheme.Dark"/>
         <service android:exported="false" android:name="com.winlator.cmod.store.SteamForegroundService" android:foregroundServiceType="dataSync"/>
         <receiver android:exported="true" android:name="com.winlator.cmod.ShortcutBroadcastReceiver">
             <intent-filter>
