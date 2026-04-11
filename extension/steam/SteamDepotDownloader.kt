@@ -18,7 +18,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Steam depot download engine — uses JavaSteam's built-in DepotDownloader.
@@ -83,9 +85,24 @@ object SteamDepotDownloader {
     /** Java-compatible singleton accessor. */
     @JvmStatic fun getInstance(): SteamDepotDownloader = this
 
-    fun installApp(appId: Int, ctx: Context) {
+    /**
+     * Start install. Returns a Runnable that cancels the download when run.
+     */
+    fun installApp(appId: Int, ctx: Context): Runnable {
+        val cancelled = AtomicBoolean(false)
+        val downloaderRef = AtomicReference<DepotDownloader?>(null)
+
         CoroutineScope(Dispatchers.IO).launch {
-            runInstall(appId, ctx)
+            runInstall(appId, ctx, cancelled, downloaderRef)
+        }
+
+        return Runnable {
+            if (cancelled.compareAndSet(false, true)) {
+                dlog("Cancel requested for appId=$appId")
+                downloaderRef.get()?.let { dl ->
+                    try { dl.close() } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -93,7 +110,12 @@ object SteamDepotDownloader {
     // Core install logic
     // -------------------------------------------------------------------------
 
-    private fun runInstall(appId: Int, ctx: Context) {
+    private fun runInstall(
+        appId: Int,
+        ctx: Context,
+        cancelled: AtomicBoolean,
+        downloaderRef: AtomicReference<DepotDownloader?>,
+    ) {
         initDebugLog(ctx)
         dlog("=== Starting install: appId=$appId ===")
 
@@ -160,11 +182,12 @@ object SteamDepotDownloader {
             return
         }
         dlog("DepotDownloader constructed OK")
+        downloaderRef.set(downloader)
 
         downloader.addListener(object : IDownloadListener {
             override fun onDownloadStarted(item: DownloadItem) {
                 dlog("onDownloadStarted: appId=${item.appId}")
-                repo.emit("DownloadProgress:$appId:0:$totalExpected")
+                repo.emit("DownloadProgress:$appId:0:${totalRunning.get()}")
             }
 
             override fun onStatusUpdate(message: String) {
@@ -217,9 +240,15 @@ object SteamDepotDownloader {
             }
 
             override fun onDownloadFailed(item: DownloadItem, error: Throwable) {
-                dlog("=== Download FAILED: appId=${item.appId} ===")
-                dlogError("onDownloadFailed", error)
-                emitFailed(appId, error.message ?: "Unknown error")
+                if (cancelled.get()) {
+                    dlog("=== Download cancelled by user: appId=${item.appId} ===")
+                    db.deleteDownload(appId)
+                    repo.emit("DownloadCancelled:$appId")
+                } else {
+                    dlog("=== Download FAILED: appId=${item.appId} ===")
+                    dlogError("onDownloadFailed", error)
+                    emitFailed(appId, error.message ?: "Unknown error")
+                }
             }
         })
 
@@ -251,9 +280,16 @@ object SteamDepotDownloader {
             downloader.getCompletion().get()
             dlog("getCompletion() returned — download finished")
         } catch (e: ExecutionException) {
-            // onDownloadFailed callback should have fired already
-            dlog("getCompletion() ExecutionException (onDownloadFailed already called)")
-            dlogError("ExecutionException.cause", e.cause ?: e)
+            if (cancelled.get()) {
+                // onDownloadFailed callback should have handled the cancel emit;
+                // guard in case it didn't fire
+                dlog("getCompletion() ExecutionException after cancel")
+                db.deleteDownload(appId)
+                repo.emit("DownloadCancelled:$appId")
+            } else {
+                dlog("getCompletion() ExecutionException (onDownloadFailed already called)")
+                dlogError("ExecutionException.cause", e.cause ?: e)
+            }
         } catch (e: InterruptedException) {
             dlog("getCompletion() interrupted: ${e.message}")
             Thread.currentThread().interrupt()
@@ -263,6 +299,7 @@ object SteamDepotDownloader {
         } finally {
             dlog("Closing DepotDownloader")
             try { downloader.close() } catch (_: Exception) {}
+            downloaderRef.set(null)
             dlog("=== runInstall() finished ===")
         }
     }

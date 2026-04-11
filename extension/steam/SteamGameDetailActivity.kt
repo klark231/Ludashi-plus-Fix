@@ -1,8 +1,8 @@
 package com.winlator.cmod.store
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Bitmap
-import java.io.File
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
@@ -12,23 +12,30 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import java.io.File
 import java.net.URL
 
 /**
- * Game detail screen — shows header art, metadata, Install/Launch buttons.
+ * Game detail screen — shows header art, metadata, Install/Cancel/Launch buttons.
  *
- * Phase 5: display-only with stubbed Install action (download engine Phase 6).
- * Launch button enabled only when isInstalled=true (Phase 7).
+ * Cancel: installBtn toggles Install → Cancel while downloading (same pattern as Epic/GOG/Amazon).
+ * Launch: uses AmazonLaunchHelper.choosePrimaryExe() + picker dialog for multiple exes.
  */
 class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
 
     companion object {
         const val EXTRA_APP_ID = "steam_app_id"
+        private const val COLOR_INSTALL   = 0xFF1565C0.toInt()
+        private const val COLOR_CANCEL    = 0xFFCC3333.toInt()
+        private const val COLOR_UNINSTALL = 0xFFB71C1C.toInt()
+        private const val COLOR_LAUNCH    = 0xFF2E7D32.toInt()
     }
 
     private val ui = Handler(Looper.getMainLooper())
     private var appId: Int = 0
     private var game: SteamGame? = null
+
+    @Volatile private var cancelRef: Runnable? = null
 
     // views updated after load
     private lateinit var headerImage: ImageView
@@ -68,20 +75,40 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
                 if (id != appId) return
                 val done  = parts.getOrNull(2)?.toLongOrNull() ?: 0L
                 val total = parts.getOrNull(3)?.toLongOrNull() ?: 1L
-                val pct   = if (total > 0) (done * 100 / total).toInt() else 0
+                val pct   = if (total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else 0
                 ui.post {
-                    progressBar.visibility = View.VISIBLE
-                    progressBar.progress   = pct
+                    progressBar.visibility  = View.VISIBLE
+                    progressBar.progress    = pct
                     progressText.visibility = View.VISIBLE
-                    progressText.text = "Downloading… $pct%  (${fmtSize(done)} / ${fmtSize(total)})"
-                    installBtn.isEnabled = false
-                    installBtn.text = "Downloading…"
+                    progressText.text       = "Downloading… $pct%  (${fmtSize(done)} / ${fmtSize(total)})"
+                    installBtn.isEnabled    = true
+                    installBtn.text         = "Cancel"
+                    installBtn.setBackgroundColor(COLOR_CANCEL)
                 }
             }
             event.startsWith("DownloadComplete:") -> {
                 val id = event.substringAfter("DownloadComplete:").toIntOrNull() ?: return
                 if (id != appId) return
-                ui.post { loadGame() }
+                cancelRef = null
+                ui.post {
+                    progressBar.visibility  = View.GONE
+                    progressText.visibility = View.GONE
+                    loadGame()
+                }
+            }
+            event.startsWith("DownloadCancelled:") -> {
+                val id = event.substringAfter("DownloadCancelled:").toIntOrNull() ?: return
+                if (id != appId) return
+                cancelRef = null
+                ui.post {
+                    progressBar.visibility  = View.GONE
+                    progressText.visibility = View.GONE
+                    statusText.text = "Download cancelled"
+                    statusText.setTextColor(Color.parseColor("#AAAAAA"))
+                    installBtn.isEnabled = true
+                    installBtn.text = "Install"
+                    installBtn.setBackgroundColor(COLOR_INSTALL)
+                }
             }
             event.startsWith("DownloadFailed:") -> {
                 val parts = event.split(":")
@@ -89,6 +116,7 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
                 if (id != appId) return
                 val reason = parts.drop(2).joinToString(":")
                 val logPath = SteamDepotDownloader.debugLogPath
+                cancelRef = null
                 ui.post {
                     progressBar.visibility  = View.GONE
                     progressText.visibility = View.GONE
@@ -96,6 +124,7 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
                     statusText.setTextColor(Color.parseColor("#FF5555"))
                     installBtn.isEnabled = true
                     installBtn.text = "Retry"
+                    installBtn.setBackgroundColor(COLOR_INSTALL)
                 }
             }
         }
@@ -115,13 +144,14 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
         // Check for an active download
         val dlRow = SteamRepository.getInstance().database.getDownload(appId)
         if (dlRow != null && dlRow.status == SteamDatabase.DL_DOWNLOADING) {
-            val pct = if (dlRow.bytesTotal > 0) (dlRow.bytesDownloaded * 100 / dlRow.bytesTotal).toInt() else 0
+            val pct = if (dlRow.bytesTotal > 0) (dlRow.bytesDownloaded * 100 / dlRow.bytesTotal).toInt().coerceIn(0, 100) else 0
             progressBar.visibility  = View.VISIBLE
             progressBar.progress    = pct
             progressText.visibility = View.VISIBLE
-            progressText.text = "Downloading… $pct%"
-            installBtn.isEnabled = false
-            installBtn.text = "Downloading…"
+            progressText.text       = "Downloading… $pct%"
+            installBtn.isEnabled    = true
+            installBtn.text         = "Cancel"
+            installBtn.setBackgroundColor(COLOR_CANCEL)
         }
     }
 
@@ -136,16 +166,18 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
             statusText.text = "Installed"
             statusText.setTextColor(Color.parseColor("#4CAF50"))
             installBtn.text = "Uninstall"
-            installBtn.setBackgroundColor(Color.parseColor("#B71C1C"))
-            launchBtn.isEnabled = true
-            launchBtn.alpha = 1f
+            installBtn.setBackgroundColor(COLOR_UNINSTALL)
+            installBtn.isEnabled = true
+            launchBtn.isEnabled  = true
+            launchBtn.alpha      = 1f
         } else {
             statusText.text = "Not installed"
             statusText.setTextColor(Color.parseColor("#AAAAAA"))
             installBtn.text = "Install"
-            installBtn.setBackgroundColor(Color.parseColor("#1565C0"))
-            launchBtn.isEnabled = false
-            launchBtn.alpha = 0.4f
+            installBtn.setBackgroundColor(COLOR_INSTALL)
+            installBtn.isEnabled = true
+            launchBtn.isEnabled  = false
+            launchBtn.alpha      = 0.4f
         }
     }
 
@@ -165,6 +197,15 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
 
     private fun onInstallClicked() {
         val g = game ?: return
+
+        // Cancel in-progress download
+        val cr = cancelRef
+        if (cr != null) {
+            cr.run()
+            cancelRef = null
+            return
+        }
+
         if (g.isInstalled) {
             // Uninstall — remove from DB and delete files
             SteamRepository.getInstance().database.markUninstalled(appId)
@@ -175,7 +216,7 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
         } else {
             installBtn.isEnabled = false
             installBtn.text = "Starting…"
-            SteamDepotDownloader.installApp(appId, applicationContext)
+            cancelRef = SteamDepotDownloader.installApp(appId, applicationContext)
         }
     }
 
@@ -185,30 +226,53 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
             Toast.makeText(this, "Game not installed", Toast.LENGTH_SHORT).show()
             return
         }
-        val exePath = findExe(File(g.installDir))
-        if (exePath == null) {
-            Toast.makeText(this, "No executable found in install directory", Toast.LENGTH_LONG).show()
-            return
-        }
-        com.winlator.cmod.store.LudashiLaunchBridge.addToLauncher(this, g.name, exePath)
+        val installDir = File(g.installDir)
+        Thread {
+            val exeFiles = mutableListOf<File>()
+            AmazonLaunchHelper.collectExe(installDir, exeFiles)
+
+            if (exeFiles.isEmpty()) {
+                ui.post {
+                    Toast.makeText(this, "No .exe found in install directory", Toast.LENGTH_LONG).show()
+                }
+                return@Thread
+            }
+
+            // Sort by score — same heuristic as Epic/Amazon
+            val lowerTitle = g.name.lowercase()
+            exeFiles.sortWith { a, b ->
+                AmazonLaunchHelper.scoreExe(b, lowerTitle) - AmazonLaunchHelper.scoreExe(a, lowerTitle)
+            }
+
+            if (exeFiles.size == 1) {
+                ui.post { LudashiLaunchBridge.addToLauncher(this, g.name, exeFiles[0].absolutePath) }
+                return@Thread
+            }
+
+            // Multiple exes — show picker
+            val candidates = exeFiles.map { it.absolutePath }
+            showExePicker(candidates) { chosen ->
+                ui.post { LudashiLaunchBridge.addToLauncher(this, g.name, chosen) }
+            }
+        }.start()
     }
 
-    /**
-     * Scan for the best .exe in the install directory tree.
-     * Skips redistributable paths. Returns the largest .exe found,
-     * or null if none exist.
-     */
-    private fun findExe(root: File): String? {
-        if (!root.exists() || !root.isDirectory) return null
-        val skip = setOf("redist", "redistribut", "_commonredist", "directx", "vcredist", "__installer")
-        return root.walkTopDown()
-            .filter { f ->
-                f.isFile &&
-                f.name.endsWith(".exe", ignoreCase = true) &&
-                skip.none { f.absolutePath.lowercase().contains(it) }
-            }
-            .maxByOrNull { it.length() }
-            ?.absolutePath
+    private fun showExePicker(candidates: List<String>, onSelected: (String) -> Unit) {
+        val labels = candidates.map { path ->
+            val f = File(path)
+            val parent = f.parentFile
+            if (parent != null) "${parent.name}/${f.name}" else f.name
+        }.toTypedArray()
+
+        ui.post {
+            AlertDialog.Builder(this)
+                .setTitle("Select game executable")
+                .setItems(labels) { _, which ->
+                    Thread { onSelected(candidates[which]) }.start()
+                }
+                .setCancelable(false)
+                .show()
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -315,7 +379,7 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
         installBtn = Button(this).apply {
             text = "Install"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1565C0"))
+            setBackgroundColor(COLOR_INSTALL)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = dp(8)
             }
@@ -325,7 +389,7 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
         launchBtn = Button(this).apply {
             text = "Launch"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#2E7D32"))
+            setBackgroundColor(COLOR_LAUNCH)
             isEnabled = false
             alpha = 0.4f
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
