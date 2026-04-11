@@ -262,8 +262,13 @@ object SteamDepotDownloader {
             appId = appId,
             installDirectory = installDir.absolutePath,
             branch = "public",
-            // Depot list intentionally empty: DepotDownloader selects
-            // Windows-compatible depots automatically via license data.
+            // Explicitly request Windows depots — don't let Util.getSteamOS() guess,
+            // since androidEmulation only works if IS_OS_ANDROID is true at runtime.
+            os = "windows",
+            // Skip arch filtering — we always want the game's Windows depots regardless
+            // of what os.arch returns on this Android device (arm64, aarch64, armv8l, etc.).
+            // Wine/Box64 handles x86_64 translation; arch mismatch would filter all depots.
+            downloadAllArchs = true,
         )
         dlog("Adding AppItem: appId=${item.appId} branch=${item.branch} dir=${item.installDirectory}")
         downloader.add(item)
