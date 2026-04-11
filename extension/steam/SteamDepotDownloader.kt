@@ -149,12 +149,15 @@ object SteamDepotDownloader {
         dlog("Install dir: ${installDir.absolutePath}")
 
         // total bytes from PICS size data (falls back to depot manifest sum)
+        val hasPicsSize: Boolean
         val totalExpected: Long = if (row.sizeBytes > 0L) {
+            hasPicsSize = true
             row.sizeBytes
         } else {
+            hasPicsSize = false
             db.getDepotManifests(appId).sumOf { it.sizeBytes }.let { if (it > 0L) it else 1L }
         }
-        dlog("Expected total: ${fmtSize(totalExpected)}")
+        dlog("Expected total: ${fmtSize(totalExpected)} (hasPicsSize=$hasPicsSize)")
 
         // Queue in DB so UI shows progress
         db.queueDownload(appId, totalExpected, installDir.absolutePath)
@@ -210,10 +213,11 @@ object SteamDepotDownloader {
                 if (uncompressedBytes > prev) bytesDownloaded.set(uncompressedBytes)
                 val done = bytesDownloaded.get()
 
-                // If PICS gave us a bogus/zero size, back-calculate total from
-                // depotPercentComplete so progress stays 0-99% instead of 200%+
-                if (depotPercentComplete > 0f && done > 0L) {
-                    val implied = (done / depotPercentComplete).toLong()
+                // Only back-calculate when PICS gave no valid size — avoids
+                // totalRunning spiking to inflated values (e.g. 81KB / 0.001% = 4.3 GB)
+                // on large depots where pct stays near 0 for many chunks.
+                if (!hasPicsSize && depotPercentComplete > 0.05f && done > 0L) {
+                    val implied = (done.toDouble() / depotPercentComplete).toLong()
                     if (implied > totalRunning.get()) totalRunning.set(implied)
                 }
                 val total = totalRunning.get()

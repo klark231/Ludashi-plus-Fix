@@ -46,6 +46,12 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Refresh list when returning from detail screen so installed state is current
+        loadGames()
+    }
+
     override fun onDestroy() {
         SteamRepository.getInstance().removeListener(this)
         super.onDestroy()

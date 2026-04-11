@@ -4,6 +4,46 @@ Build and modification history for Ludashi-plus — Winlator Ludashi v2.9 bionic
 
 ---
 
+### Post-CI — v1.0.3-steam-pre1 — Cancel button + launch exe picker (2026-04-11)
+- CI run: 24270078935 ✅ success — auto-published
+- Commit: `23ff7e0`
+- Cancel: installBtn toggles Install→Cancel(red); installApp() returns Runnable; cancel closes downloader + deleteDownload + DownloadCancelled event
+- Launch: AmazonLaunchHelper.collectExe()+scoreExe() heuristic; single exe direct; multiple → picker dialog
+- Remaining: QR login untested; progress bar edge cases; UI tweaks
+
+### Session end — v1.0.2-steam-pre1 — 2026-04-10
+
+**Active pre: v1.0.2-steam-pre1** | Commit: `a316d92` | CI: ✅ run 24264156261 | APK: 525MB live
+
+#### What was done this session
+1. `52e88ff` — fix: `@file:JvmName("ExecuteAsyncKt")` compat shim had wrong generated class name (`ExecuteAsyncKtKt` → `ExecuteAsyncKt`) — resolved `ClassNotFoundException` on download
+2. `ad4399a` — fix: progress bar clamped to 0-99% during download; back-calculates totalExpected from `depotPercentComplete` when PICS sizeBytes=0 (was causing 200%+ display); emits 100% from `onDownloadCompleted` before installed state (was showing "installed at 40%")
+3. `89e91cf` — ci: `gh release edit --draft=false --prerelease` after upload on existing-release path — releases were staying as drafts on retag (now auto-publishes)
+4. `a316d92` — fix: Steam games now install to `getFilesDir()/imagefs/steam_games/<Title>/` = `Z:\steam_games\<Title>\` in Wine — same Z: drive as GOG/Epic/Amazon (was using external storage, unreachable from Wine)
+5. Deleted `v1.0.1-steam-pre1` release + tag; re-released as `v1.0.2-steam-pre1`
+
+#### What still needs doing
+- Fix download cancel button (not yet implemented)
+- Fix Launch button — `findExe()` scans for `.exe` but Linux-only games (e.g. Uplink) only have `.bin`; Windows games should work once launch flow is tested
+- Download progress bar still has edge-case bugs (noted in release description)
+- Various UI tweaks
+
+### Post-CI — v1.0.1-steam-pre1 — Steam install path + progress + CI draft fix (2026-04-10)
+- CI run: 24263828994 ✅ success — auto-published (workflow draft fix confirmed working)
+- Commits: `ad4399a` progress fix | `89e91cf` CI draft fix | `a316d92` install path
+- Steam install dir → `getFilesDir()/imagefs/steam_games/<Title>/` = `Z:\steam_games\<Title>\` in Wine
+- Progress: clamped 0-99%, back-calc total from depotPercentComplete, 100% emitted on complete
+- Next step: test new APK — verify Z: drive path, re-test download progress bar
+
+### Post-CI — v1.0.1-steam-pre1 APK re-published (2026-04-10)
+- CI run: 24261739303 ✅ success (re-triggered after APK was missing from release)
+- Commit: `52e88ff` — no code change, release fix only
+- Root cause: tag force-delete + re-push → CI uploaded APK as draft release → published with `gh release edit --draft=false`
+- APK: `LudashiPlus-v1.0.1-steam-pre1.apk` (525MB) now live
+- Next step: install, test Steam download pipeline with `@file:JvmName("ExecuteAsyncKt")` fix in place
+
+---
+
 ## Session: 2026-04-08 — Game Stores Integration
 
 ### Research & Reverse Engineering (Passes 1–38)
@@ -832,3 +872,10 @@ From section 5.3 / 2.2:
 - Tag: v1.0.1-steam-pre1 (retag after push)
 - Expected: classes22.dex now contains `okhttp3/coroutines/ExecuteAsyncKt` (not `ExecuteAsyncKtKt`)
 - CI pending
+
+### Post-CI — fix: @file:JvmName("ExecuteAsyncKt") (2026-04-10)
+- Run: 24258524277 ✅ success (7m1s)
+- Commit: `52e88ff` | Tag: `v1.0.1-steam-pre1`
+- Root cause: `ExecuteAsyncKt.kt` filename → Kotlin generates `ExecuteAsyncKtKt` → @file:JvmName forces correct `ExecuteAsyncKt`
+- classes22.dex now has correct class name — should resolve ClassNotFoundException at runtime
+- **Next step:** install this APK, try downloading a game, check debug log + logcat
