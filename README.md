@@ -5,28 +5,38 @@
 <h1 align="center">Ludashi+</h1>
 
 <p align="center">
-  Winlator Ludashi 2.9 Bionic — with GOG, Epic Games, and Amazon Games stores built in.
+  Winlator Ludashi 2.9 Bionic — with GOG, Epic Games, Amazon Games, and Steam stores built in.
 </p>
 
 ---
 
-Ludashi+ is a patched build of [Winlator-Ludashi v2.9](https://github.com/StevenMXZ/Winlator-Ludashi) by StevenMXZ. It adds native GOG, Epic Games Store, and Amazon Games library browsing, downloading, and launching directly inside the app — no sideloading required.
+Ludashi+ is a patched build of [Winlator-Ludashi v2.9](https://github.com/StevenMXZ/Winlator-Ludashi) by StevenMXZ. It adds native GOG, Epic Games Store, Amazon Games, and Steam library browsing, downloading, and launching directly inside the app — no sideloading required.
 
-It uses a distinct package name (`com.winlator.cmod`) and can coexist with standard Winlator builds. It **cannot** be installed over the top of the original Ludashi 2.9 — different signing key. Uninstall the original first. Your Wine containers in external storage are preserved across reinstalls.
+It uses a distinct package name (`com.winlator.cmod`) and can coexist with standard Winlator builds. Installing over the original Winlator-Ludashi is possible but **at your own risk** — different signing keys may cause issues. A clean uninstall of the original first is the safer option. Your Wine containers in external storage are preserved across reinstalls.
 
 ---
 
 ## What Ludashi+ adds
 
 ### Game Stores
+
 - **GOG** — log in with your GOG account, browse your library, download and launch games. Games install into the Wine prefix (Z: drive / imagefs).
 - **Epic Games Store** — OAuth login via in-app browser, library sync, chunked manifest download (Fastly/Akamai CDN, no token required), launch via Wine shortcut.
 - **Amazon Games** — PKCE OAuth login, GetEntitlements library sync, protobuf manifest download (LZMA/XZ), fuel.json launch with FuelSDK env vars.
+- **Steam** — full Steam integration:
+  - Log in with username + password, or scan a QR code (verified working)
+  - Library sync — your full owned game list from Steam
+  - Download with speed picker (Safe / Normal / Fast)
+  - Pause and resume downloads — state persists across app restarts
+  - Cancel downloads — stops immediately and removes all downloaded files
+  - Launch installed games via Wine shortcut
+  - Logout support
+  - Auto-rotate on library and game detail screens
 
 ### UI / App
 - App label: **Ludashi+**
 - Custom icon — distinct from base Ludashi so both can coexist on the same device
-- Store section in the side menu (GOG / Epic / Amazon tabs; Steam coming soon)
+- Store section in the side menu (GOG / Epic / Amazon / Steam tabs)
 
 ---
 
@@ -39,9 +49,9 @@ The Ludashi build uses the package name `com.winlator.cmod` to mimic Ludashi, a 
 ## Installation
 
 1. Download the latest APK from the [Releases](https://github.com/The412Banner/Ludashi-plus/releases) page.
-2. If you have the original Winlator-Ludashi installed, uninstall it first (different signing key — your external-storage containers are safe).
+2. If you have the original Winlator-Ludashi installed: a clean uninstall first is recommended (your external-storage containers are safe). Installing over the original is possible but at your own risk due to different signing keys.
 3. Install the APK and launch. Wait for the first-run setup to finish.
-4. To use a game store: open the side menu → tap GOG, Epic, or Amazon → log in.
+4. To use a game store: open the side menu → tap GOG, Epic, Amazon, or Steam → log in.
 
 ---
 
@@ -75,6 +85,7 @@ Updated components (`wcps`) for improved compatibility and performance, plus new
 - **Original Winlator Bionic** by [Pipetto-crypto](https://github.com/Pipetto-crypto/winlator)
 - **Original Winlator** by [brunodev85](https://github.com/brunodev85/winlator)
 - **Winlator (coffincolors fork)** by [coffincolors](https://github.com/coffincolors/winlator)
+- **JavaSteam** by [LossyDragon](https://github.com/LossyDragon/JavaSteam) — Steam client library
 - Ubuntu RootFs (Bionic Beaver): [releases.ubuntu.com/bionic](https://releases.ubuntu.com/bionic)
 - Wine: [winehq.org](https://www.winehq.org/)
 - Box86/Box64 by [ptitSeb](https://github.com/ptitSeb)
