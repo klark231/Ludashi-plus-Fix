@@ -264,11 +264,22 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
     private fun onInstallClicked() {
         val g = game ?: return
 
-        // Active download — cancel it (stops + deletes files)
+        // Active download — cancel immediately and reset UI without waiting for event
         val handle = downloadHandle
         if (handle != null) {
+            val db = SteamRepository.getInstance().database
+            val dir = db.getDownload(appId)?.installDir ?: ""
             handle.cancel.run()
             downloadHandle = null
+            if (dir.isNotEmpty()) Thread { File(dir).deleteRecursively() }.start()
+            progressBar.visibility  = View.GONE
+            progressText.visibility = View.GONE
+            statusText.text = "Download cancelled"
+            statusText.setTextColor(Color.parseColor("#AAAAAA"))
+            installBtn.text = "Install"
+            installBtn.setBackgroundColor(COLOR_INSTALL)
+            installBtn.isEnabled = true
+            resetPauseBtn()
             return
         }
 
@@ -279,16 +290,14 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
             db.deleteDownload(appId)
             val dir = dlRow.installDir
             if (dir.isNotEmpty()) Thread { File(dir).deleteRecursively() }.start()
-            ui.post {
-                progressBar.visibility  = View.GONE
-                progressText.visibility = View.GONE
-                statusText.text = "Download cancelled"
-                statusText.setTextColor(Color.parseColor("#AAAAAA"))
-                installBtn.text = "Install"
-                installBtn.setBackgroundColor(COLOR_INSTALL)
-                installBtn.isEnabled = true
-                resetPauseBtn()
-            }
+            progressBar.visibility  = View.GONE
+            progressText.visibility = View.GONE
+            statusText.text = "Download cancelled"
+            statusText.setTextColor(Color.parseColor("#AAAAAA"))
+            installBtn.text = "Install"
+            installBtn.setBackgroundColor(COLOR_INSTALL)
+            installBtn.isEnabled = true
+            resetPauseBtn()
             return
         }
 
@@ -307,16 +316,23 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
     private fun onPauseResumeClicked() {
         val handle = downloadHandle
         if (handle != null) {
-            // Currently downloading — pause it
+            // Immediately flip button to Resume — don't wait for DownloadPaused event
             handle.pause.run()
             downloadHandle = null
-            pauseBtn.isEnabled = false
-            pauseBtn.text = "Pausing…"
+            pauseBtn.text = "Resume"
+            pauseBtn.setBackgroundColor(COLOR_RESUME)
+            pauseBtn.isEnabled = true
+            pauseBtn.alpha = 1f
+            installBtn.text = "Cancel"
+            installBtn.isEnabled = true
+            val cur = progressText.text.toString()
+            if (cur.startsWith("Downloading")) progressText.text = cur.replace("Downloading", "Pausing")
         } else {
             // Currently paused — resume it
             val dlRow = SteamRepository.getInstance().database.getDownload(appId) ?: return
             if (dlRow.status != SteamDatabase.DL_PAUSED) return
             pauseBtn.isEnabled = false
+            pauseBtn.alpha = 0.4f
             pauseBtn.text = "Resuming…"
             installBtn.isEnabled = false
             installBtn.text = "Starting…"
