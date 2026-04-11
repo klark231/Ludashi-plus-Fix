@@ -260,10 +260,12 @@ public final class SteamRepository {
             b.withDirectoryFetch(true);
         });
 
-        steamClient = new SteamClient(config);
-        manager     = new CallbackManager(steamClient);
-        steamUser   = steamClient.getHandler(SteamUser.class);
-        steamApps   = steamClient.getHandler(SteamApps.class);
+        steamClient    = new SteamClient(config);
+        manager        = new CallbackManager(steamClient);
+        steamUser      = steamClient.getHandler(SteamUser.class);
+        steamApps      = steamClient.getHandler(SteamApps.class);
+        steamCloud     = steamClient.getHandler(SteamCloud.class);
+        steamUserStats = steamClient.getHandler(SteamUserStats.class);
 
         registerCallbacks();
         Log.i(TAG, "SteamRepository initialised");
@@ -733,7 +735,6 @@ public final class SteamRepository {
     // -------------------------------------------------------------------------
 
     public SteamClient   getSteamClient() { return steamClient; }
-    public SteamApps     getSteamApps()   { return steamApps; }
     public SteamDatabase getDatabase() {
         if (appContext != null) return SteamDatabase.getInstance(appContext);
         return SteamDatabase.getInstance();

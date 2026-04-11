@@ -245,14 +245,19 @@ class SteamGameDetailActivity : Activity(), SteamRepository.SteamEventListener {
             }
 
             if (exeFiles.size == 1) {
-                ui.post { LudashiLaunchBridge.addToLauncher(this, g.name, exeFiles[0].absolutePath) }
+                val exePath = exeFiles[0].absolutePath
+                ui.post {
+                    SteamLaunchHelper.launch(this, appId, g.name, exePath, g.installDir)
+                }
                 return@Thread
             }
 
             // Multiple exes — show picker
             val candidates = exeFiles.map { it.absolutePath }
             showExePicker(candidates) { chosen ->
-                ui.post { LudashiLaunchBridge.addToLauncher(this, g.name, chosen) }
+                ui.post {
+                    SteamLaunchHelper.launch(this, appId, g.name, chosen, g.installDir)
+                }
             }
         }.start()
     }
