@@ -161,7 +161,7 @@ public final class SteamRepository {
     public List<SteamDatabase.GameRow> getCachedGameRows() {
         List<SteamDatabase.GameRow> rows = cachedGameRows;
         if (rows != null) return rows;
-        rows = getDatabase().allGames;
+        rows = getDatabase().getAllGames();
         cachedGameRows = rows;
         return rows;
     }
