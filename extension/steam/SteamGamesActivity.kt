@@ -267,9 +267,28 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
             setPadding(dp(12), 0, dp(12), 0)
             setOnClickListener { SteamRepository.getInstance().syncLibrary() }
         }
+        val logoutBtn = Button(this).apply {
+            text = "Logout"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xFFB71C1C.toInt())
+            setPadding(dp(12), 0, dp(12), 0)
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@SteamGamesActivity)
+                    .setTitle("Sign out of Steam?")
+                    .setMessage("Your saved login will be removed. You will need to sign in again.")
+                    .setPositiveButton("Sign Out") { _, _ ->
+                        SteamRepository.getInstance().logout()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
         header.addView(backBtn)
         header.addView(title)
         header.addView(refreshBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { marginEnd = dp(6) })
+        header.addView(logoutBtn, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)))
         root.addView(header)
 

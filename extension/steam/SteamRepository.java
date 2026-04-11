@@ -723,6 +723,7 @@ public final class SteamRepository {
                 .apply();
         }
         synchronized (licenses) { licenses.clear(); }
+        cachedGameRows = null;
         Log.i(TAG, "Logged out");
         emit("LoggedOut");
     }
