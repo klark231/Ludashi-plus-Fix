@@ -155,7 +155,9 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
                 val sizeView      = infoView.getChildAt(3) as TextView
                 val metaView      = infoView.getChildAt(4) as TextView
                 val installedLabel = infoView.getChildAt(5) as TextView
-                val uninstallBtn  = infoView.getChildAt(6) as Button
+                val btnRow        = infoView.getChildAt(6) as LinearLayout
+                val launchBtn     = btnRow.getChildAt(0) as Button
+                val uninstallBtn  = btnRow.getChildAt(1) as Button
 
                 nameView.text = game.name.ifEmpty { "App ${game.appId}" }
 
@@ -181,10 +183,44 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
                     metaView.visibility = View.GONE
                 }
 
-                // Installed indicator + uninstall button
+                // Installed indicator + Launch / Uninstall buttons
                 if (game.isInstalled) {
                     installedLabel.visibility = View.VISIBLE
-                    uninstallBtn.visibility   = View.VISIBLE
+                    btnRow.visibility         = View.VISIBLE
+                    launchBtn.setOnClickListener {
+                        if (game.installDir.isEmpty()) {
+                            Toast.makeText(this@SteamGamesActivity,
+                                "Install directory not found", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                        val installDir = java.io.File(game.installDir)
+                        val exeFiles   = mutableListOf<java.io.File>()
+                        AmazonLaunchHelper.collectExe(installDir, exeFiles)
+                        if (exeFiles.isEmpty()) {
+                            Toast.makeText(this@SteamGamesActivity,
+                                "No .exe found in install directory", Toast.LENGTH_SHORT).show()
+                            return@setOnClickListener
+                        }
+                        val lowerTitle = game.name.lowercase()
+                        exeFiles.sortWith(compareByDescending {
+                            AmazonLaunchHelper.scoreExe(it, lowerTitle)
+                        })
+                        if (exeFiles.size == 1) {
+                            LudashiLaunchBridge.addToLauncher(
+                                this@SteamGamesActivity, game.name,
+                                exeFiles[0].absolutePath)
+                        } else {
+                            val labels = exeFiles.map { it.name }.toTypedArray()
+                            android.app.AlertDialog.Builder(this@SteamGamesActivity)
+                                .setTitle("Choose executable")
+                                .setItems(labels) { _, which ->
+                                    LudashiLaunchBridge.addToLauncher(
+                                        this@SteamGamesActivity, game.name,
+                                        exeFiles[which].absolutePath)
+                                }
+                                .show()
+                        }
+                    }
                     uninstallBtn.setOnClickListener {
                         val db = SteamRepository.getInstance().database
                         db.markUninstalled(game.appId)
@@ -195,7 +231,9 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
                     }
                 } else {
                     installedLabel.visibility = View.GONE
-                    uninstallBtn.visibility   = View.GONE
+                    btnRow.visibility         = View.GONE
+                    launchBtn.setOnClickListener(null)
+                    uninstallBtn.setOnClickListener(null)
                 }
 
                 // Reset art to placeholder then kick off async load
@@ -400,27 +438,48 @@ class SteamGamesActivity : Activity(), SteamRepository.SteamEventListener {
             visibility = View.GONE
         }
 
-        // child 6: uninstall button
+        // child 6: horizontal button row (Launch + Uninstall side by side)
+        // Both buttons have isFocusable=false so they don't block ListView item clicks —
+        // that lets the row tap still open SteamGameDetailActivity.
+        val btnRow = LinearLayout(this@SteamGamesActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility  = View.GONE
+        }
+        val launchBtn = Button(this@SteamGamesActivity).apply {
+            text     = "Launch"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xFF1565C0.toInt())
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            isFocusable = false
+        }
         val uninstallBtn = Button(this@SteamGamesActivity).apply {
-            text = "Uninstall"
+            text     = "Uninstall"
             textSize = 11f
             setTextColor(Color.WHITE)
             setBackgroundColor(0xFFB71C1C.toInt())
             setPadding(dp(8), dp(2), dp(8), dp(2))
-            visibility = View.GONE
+            isFocusable = false
         }
+        val btnLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) }
+        btnRow.addView(launchBtn,    btnLp)
+        btnRow.addView(uninstallBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)))
 
         val wrapLp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        val uninstallLp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)).apply { topMargin = dp(3) }
+        val btnRowLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(3)
+        }
         infoLayout.addView(nameView,       wrapLp)
         infoLayout.addView(developerView,  wrapLp)
         infoLayout.addView(genresView,     wrapLp)
         infoLayout.addView(sizeView,       wrapLp)
         infoLayout.addView(metaView,       wrapLp)
         infoLayout.addView(installedLabel, wrapLp)
-        infoLayout.addView(uninstallBtn,   uninstallLp)
+        infoLayout.addView(btnRow,         btnRowLp)
 
         addView(infoLayout, LinearLayout.LayoutParams(0, artHeight, 1f))
 
