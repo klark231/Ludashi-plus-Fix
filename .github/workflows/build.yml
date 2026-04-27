@@ -401,25 +401,45 @@ jobs:
           path = "apktool_out_base/smali_classes8/com/winlator/cmod/XServerDisplayActivity.smali"
           with open(path, "r") as f:
               content = f.read()
-          old = (
+
+          # Patch 1: skip d3d12 restore when dxvkProfile is non-null
+          old1 = (
               "    if-eqz v6, :cond_2\n\n"
               "    .line 1532\n"
               "    const/4 v5, 0x2"
           )
-          new = (
+          new1 = (
               "    if-eqz v6, :cond_2\n\n"
               "    if-nez v17, :goto_1\n\n"
               "    .line 1532\n"
               "    const/4 v5, 0x2"
           )
-          if old in content:
-              content = content.replace(old, new, 1)
-              with open(path, "w") as f:
-                  f.write(content)
-              print("OK: d3d12 restore skip patched")
+          if old1 in content:
+              content = content.replace(old1, new1, 1)
+              print("OK: patch 1 — d3d12 restore skip")
           else:
-              print("ERROR: pattern not found — patch failed", file=sys.stderr)
+              print("ERROR: patch 1 pattern not found", file=sys.stderr)
               sys.exit(1)
+
+          # Patch 2: always call extractDXWrapperFiles — remove cache guard
+          old2 = (
+              "    if-nez v4, :cond_3\n\n"
+              "    .line 640\n"
+              "    invoke-direct {p0, v3}, Lcom/winlator/cmod/XServerDisplayActivity;->extractDXWrapperFiles(Ljava/lang/String;)V"
+          )
+          new2 = (
+              "    .line 640\n"
+              "    invoke-direct {p0, v3}, Lcom/winlator/cmod/XServerDisplayActivity;->extractDXWrapperFiles(Ljava/lang/String;)V"
+          )
+          if old2 in content:
+              content = content.replace(old2, new2, 1)
+              print("OK: patch 2 — cache guard removed")
+          else:
+              print("ERROR: patch 2 pattern not found", file=sys.stderr)
+              sys.exit(1)
+
+          with open(path, "w") as f:
+              f.write(content)
           EOF
 
       - name: Download org.json for Java compilation
