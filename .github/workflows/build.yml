@@ -402,7 +402,8 @@ jobs:
           with open(path, "r") as f:
               content = f.read()
 
-          # Patch 1: skip d3d12 restore when dxvkProfile is non-null
+          # Patch 1: when VKD3D=None, never restore d3d12 — leave whatever is in system32
+          # (custom unified DXVK content puts VKD3D-Proton d3d12 there; don't overwrite it)
           old1 = (
               "    if-eqz v6, :cond_2\n\n"
               "    .line 1532\n"
@@ -410,7 +411,7 @@ jobs:
           )
           new1 = (
               "    if-eqz v6, :cond_2\n\n"
-              "    if-nez v17, :goto_1\n\n"
+              "    goto :goto_1\n\n"
               "    .line 1532\n"
               "    const/4 v5, 0x2"
           )
