@@ -34,9 +34,9 @@ jobs:
           echo "$HOME/bin" >> $GITHUB_PATH
           java -jar $HOME/bin/apktool.jar --version
 
-      - name: Download base Ludashi APK (Winlator-Ludashi v2.9 bionic)
+      - name: Download base Ludashi APK (Winlator-Ludashi v3.0 bionic)
         run: |
-          gh release download v2.9 \
+          gh release download 3.0 \
             --pattern "ludashi-bionic.apk" \
             -D base/ \
             -R StevenMXZ/Winlator-Ludashi
