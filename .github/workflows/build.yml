@@ -388,6 +388,15 @@ jobs:
         run: |
           echo "Applying patches from patches/ ..."
           cp -r patches/. apktool_out_base/
+
+          # Replace all inlined ContentsManager.REMOTE_PROFILES const-strings.
+          # javac bakes static final Strings at every call site, so patching the
+          # field declaration alone is not enough — all 4 smali callers need it too.
+          find apktool_out_base -name "*.smali" -exec sed -i \
+            's|https://raw.githubusercontent.com/StevenMXZ/Winlator-Contents/main/contents.json|https://raw.githubusercontent.com/Xnick417x/Winlator-Bionic-Nightly-wcp/refs/heads/main/content.json|g' \
+            {} +
+          echo "Contents URL replacement done ($(grep -rl 'Xnick417x' apktool_out_base | wc -l) files updated)"
+
           echo "Patch manifest activities:"
           grep "store\." apktool_out_base/AndroidManifest.xml | grep -v "^$" | head -20
           echo "Patch menu items:"
