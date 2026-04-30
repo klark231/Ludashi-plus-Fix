@@ -40,7 +40,7 @@
         android:max="100"
         android:progress="0"
         android:progressBackgroundTint="#333333"
-        android:progressTint="#8B6BE0" />
+        android:progressTint="#00CFFF" />
 
     <TextView
         android:id="@+id/splash_percent_text"
@@ -56,7 +56,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="32dp"
-        android:backgroundTint="#8B6BE0"
+        android:backgroundTint="#00CFFF"
         android:text="Proceed"
         android:textColor="#FFFFFF"
         android:textStyle="bold"
