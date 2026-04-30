@@ -20,12 +20,13 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application android:allowAudioPlaybackCapture="true" android:allowBackup="false" android:appCategory="game" android:appComponentFactory="androidx.core.app.CoreComponentFactory" android:debuggable="true" android:extractNativeLibs="true" android:hardwareAccelerated="true" android:icon="@mipmap/ic_launcher" android:isGame="true" android:label="Winlator Ludashi+" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/AppTheme">
-        <activity android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize" android:exported="true" android:name="com.winlator.cmod.MainActivity" android:screenOrientation="sensor" android:theme="@style/AppTheme.Dark">
+        <activity android:exported="true" android:name="com.winlator.cmod.store.SplashInstallActivity" android:theme="@style/AppTheme.Dark" android:screenOrientation="sensor" android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize" android:exported="true" android:name="com.winlator.cmod.MainActivity" android:screenOrientation="sensor" android:theme="@style/AppTheme.Dark"/>
         <activity android:exported="false" android:name="com.winlator.cmod.BigPictureActivity" android:theme="@style/Theme.AppCompat"/>
         <activity android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize" android:exported="true" android:launchMode="singleTask" android:name="com.winlator.cmod.XServerDisplayActivity" android:screenOrientation="sensorLandscape" android:supportsPictureInPicture="true" android:theme="@style/AppThemeFullscreen"/>
         <activity android:configChanges="density|keyboard|keyboardHidden|orientation|screenSize|uiMode" android:exported="true" android:launchMode="singleTask" android:name="com.winlator.cmod.XrActivity" android:process=":vr_process" android:resizeableActivity="false" android:screenOrientation="landscape" android:theme="@style/AppThemeFullscreen">
