@@ -4,6 +4,59 @@ Build and modification history for Ludashi-plus — Winlator Ludashi v2.9 bionic
 
 ---
 
+### [branch] — 3.0 — v3.0 base APK porting session (2026-04-30)
+**Branch:** `3.0` | **Tag:** `3.0` (pre-release) | CI ✅ run 25167172753
+
+#### What was done
+- Added `base-apk-3.0` release to our repo with Winlator-Ludashi v3.0 `ludashi-bionic.apk` (505MB)
+- Created `3.0` branch from `main` to test v3.0 compatibility
+- Updated CI to download from `StevenMXZ/Winlator-Ludashi` tag `3.0` instead of `v2.9`
+
+#### Patch compatibility fixes (5 CI runs to green)
+
+**Run 1 — `da38758`** — `ci: switch base APK to Winlator-Ludashi v3.0`
+- ❌ Failed: `public.xml` declared 24 resource IDs removed in v3.0
+
+**Run 2 — `269f502`** — `fix(3.0): remove dead public.xml entries dropped in v3.0 base`
+- Removed: shader effects (`CBEnableCRTShader/FXAA/NTSCEffect/ToonShader`), render options (`CBNativeRendering`, `FLGraphContainer`, `LBLColorAdjustment`, `LLNativeOptions`, `SBBrightness/Contrast/Gamma`, `SPRenderMode`, `Sep0-3`), HUD elements (`TVFpsBig/GpuLoad/HardwareStats/Renderer/WattsTemp`), `main_menu_contents`, layouts `frame_rating` + `screen_effect_dialog`
+- ❌ Failed: `main_menu.xml` still referenced `@id/main_menu_contents`
+
+**Run 3 — `65d2353`** — `fix(3.0): remove main_menu_contents item — dropped in v3.0`
+- ✅ Build passed, 5 APKs published — but app crashed on launch
+
+**Crash analysis — log_2026_04_30_08_53_03:**
+- `NullPointerException` at `AppCompatDelegateImpl.createSubDecor()` → `ContentFrameLayout.setId()` null
+- Root cause: our v2.9 `public.xml` store IDs `0x7f09038a-8b` collided with v3.0 resources (`withText`, `withinBounds`, `wrap`, `wrap_content`, `youtubeRadioButton`), corrupting AppCompat's internal view ID lookup
+- Secondary cause: menu resource IDs shifted by 9 positions in v3.0 (`main_menu_about`: `0x7f09026c` → `0x7f090275`); our smali packed-switch had v2.9 values baked in
+
+**Run 4 — `a7c2d90`** — `fix(3.0): rebase MainActivity.smali + public.xml on v3.0 resources`
+- Replaced `patches/res/values/public.xml` with v3.0's own (4825 entries); store IDs appended at `0x7f09038f-0x7f090393`
+- Replaced `patches/smali_classes8/com/winlator/cmod/MainActivity.smali` with v3.0 base; re-applied store if-eq blocks with updated IDs (GOG=`0x7f090392`, Epic=`0x7f090391`, Amazon=`0x7f090390`, Steam=`0x7f090393`)
+- ❌ Failed: v3.0 `public.xml` declares `drawable/ab_0001`-`ab_0117` + `animated_background` which CI strips before rebuild
+
+**Run 5 — `4092420`** — `fix(3.0): remove ab_* and animated_background drawable entries from public.xml`
+- Removed 118 drawable entries (`ab_0001`-`ab_0117` + `animated_background`) that CI strips but v3.0 public.xml still declares
+- ✅ **Full green** — build 6m14s + all 4 variants (~2min each)
+
+#### Current APK state (as of `4092420` — 2026-04-30)
+- Tag: `3.0` (pre-release)
+- Branch: `3.0`
+- 5 APKs live on release page
+- App launch crash: **fixed** (pending device install test)
+- Store menu navigation: **fixed** (v3.0 resource IDs throughout)
+- Next: device test — install `LudashiPlus-3.0.apk`, verify app launches, menu opens, store tabs work
+
+#### v3.0 base changes that required patching
+| Change | Impact |
+|---|---|
+| OpenGL renderer removed (→ Vulkan) | 24 dead resource IDs in public.xml |
+| Contents tab removed | menu XML item + public.xml entry |
+| Menu IDs shifted +9 (`0x7f09026c` → `0x7f090275`) | MainActivity.smali packed-switch rebased |
+| New resources filled old ID slots | Store IDs reassigned to `0x7f09038f+` |
+| `ab_*.png` still in v3.0 public.xml | 118 drawable entries stripped from patches public.xml |
+
+---
+
 ### [stable] — v1.1.0 — APK variants + README + Genshin package fix (2026-04-11)
 **Commit:** `8268b62` | **Tag:** v1.1.0 (force-updated) | CI ✅ pending
 
