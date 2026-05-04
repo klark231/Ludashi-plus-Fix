@@ -691,7 +691,6 @@ jobs:
           echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload signed APK as artifact
-        if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.sign.outputs.apk_name }}
@@ -699,19 +698,27 @@ jobs:
           retention-days: 7
 
       - name: Create or update GitHub release
-        if: github.ref_type == 'tag' && !contains(github.ref_name, '-pre')
+        if: github.ref_type == 'tag'
         run: |
           APK_NAME="${{ steps.sign.outputs.apk_name }}"
           TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == *-pre* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+            TITLE="Ludashi-plus $TAG (pre-release)"
+          else
+            PRERELEASE_FLAG=""
+            TITLE="Ludashi-plus $TAG"
+          fi
 
           if gh release view "$TAG" &>/dev/null; then
             gh release upload "$TAG" "$APK_NAME" --clobber
-            gh release edit "$TAG" --draft=false
+            [[ -z "$PRERELEASE_FLAG" ]] && gh release edit "$TAG" --draft=false
             echo "Uploaded to existing release $TAG"
           else
             gh release create "$TAG" "$APK_NAME" \
-              --title "Ludashi-plus $TAG" \
-              --notes "Automated build — see PROGRESS_LOG.md for details."
+              --title "$TITLE" \
+              --notes "Automated build — see PROGRESS_LOG.md for details." \
+              $PRERELEASE_FLAG
             echo "Created new release $TAG with $APK_NAME"
           fi
         env:
