@@ -4,7 +4,52 @@ Build and modification history for Ludashi-plus — Winlator Ludashi v2.9 bionic
 
 ---
 
-### [stable] — v3.1.2 — LSFG-VK layer rebuild (vkCmdPipelineBarrier2 shim) (2026-05-04)
+### [pre-release] — v3.1.2-pre2 — DLL-free rebuild + DRM-redistribution cleanup (2026-05-04)
+**Branch:** `main` HEAD `f66875c` | **Tag:** `v3.1.2-pre2` | **Base APK:** `ludashi-3.0-lsfg-vk-base-v3.1.2` (republished, no DLL)
+
+#### Why
+v3.1, v3.1.1 stable, and v3.1.2-pre1 all shipped the proprietary `Lossless.dll` bundled inside `assets/lsfg_vk/Lossless.dll` (7,521,280 bytes). Per user direction: stop redistributing the DRM-encumbered binary. Users now provide their own DLL via Settings → Import Lossless.dll. The layer `.so` and manifest remain bundled (LGPL-clean from `FrankBarretta/lsfg-vk-android`).
+
+#### Repo cleanup
+- **PR #384 to `StevenMXZ/Winlator-Ludashi`** — updated to remove bundled DLL; PR body rewritten for manual-import-only flow.
+- **History rewrite on `The412Banner/Winlator-Ludashi`** — `git filter-repo --path app/src/main/assets/lsfg_vk/Lossless.dll --invert-paths` against fresh `--mirror` clone, then force-pushed `feature/lsfg-vk` (`051e8b7` → `d945574`), `feature/lsfg-vk-restore` (`e6f47a0` → `89096c4`), `lsfg-vk-color-fix` (`3edf41d` → `f2e761a`). DLL removed from every commit reachable from any branch HEAD on both fork and upstream.
+  - Caveat: orphaned-commit URLs (`raw.githubusercontent.com/.../<old-sha>/.../Lossless.dll`) still serve the file — fully expunging them requires GitHub Support per their docs.
+- **6 LSFG-shipping releases on `The412Banner/Ludashi-plus` deleted** (releases + tags via `gh release delete --cleanup-tag`):
+  - `v3.1.1`, `v3.1`, `ludashi-3.0-lsfg-vk-base-v3.1.2`, `ludashi-3.0-lsfg-vk-base-revert-test`, `test-lsfg-vk-base-build`, `ludashi-3.0-lsfg-vk-base`. ~14 APKs (~7 GB) of bundled-DLL distribution removed.
+  - Pre-LSFG releases (v3.0.0, base-apk-3.0, v1.1.x) preserved — verified clean via APK central-directory scan.
+
+#### Code changes (cherry-picked from `feature/lsfg-vk-restore@89096c4` onto `lsfg-vk-color-fix`)
+- `LsfgVkManager.java`: dropped `ASSET_DLL`, `isBundledDllAvailable()`, `bundledDllSize()`. `ensureRuntimeInstalled` now sources only the user-imported global DLL (`filesDir/lsfg-vk/Lossless.dll`).
+- `SettingsFragment.java`: dropped "Using bundled Lossless.dll" status branch. Status text is now "Imported: <path>" or "Lossless.dll not present. Import it to enable LSFG-VK."
+- `XServerDisplayActivity.java`: dropped `isBundledDllAvailable` from quick-menu DLL availability check.
+- Manual import path (button `BTImportLosslessDll`, `REQUEST_CODE_IMPORT_LOSSLESS_DLL`, `importGlobalLosslessDll`) preserved unchanged.
+
+#### Build pipeline (all green)
+1. `Winlator-Ludashi@lsfg-vk-color-fix` HEAD `21a6af0` (cherry-pick of `89096c4` on top of `f2e761a`). CI run **25332969874** ✅ → `app-debug.apk` 505 MB; verified no `Lossless.dll`, layer `.so` (2.5 MB) + manifest preserved.
+2. Republished as `ludashi-3.0-lsfg-vk-base-v3.1.2` pre-release on Ludashi-plus (preserves build.yml line 39 reference).
+3. Tag `v3.1.2-pre2` pushed → CI run **25333168037** ✅ (build job; build-variants skipped per `-pre` rule).
+4. Locally signed `rebuilt-aligned.apk` via Termux apksigner with repo's `testkey.pk8`/`testkey.x509.pem` (workflow gap — fixed in #5).
+5. **build.yml patched** (commit `f66875c`): signed APK now uploaded as artifact for ALL builds; `-pre` tags also auto-create a GitHub pre-release with the APK attached. Stable-tag behavior unchanged.
+6. v3.1.2-pre2 GitHub pre-release published with locally-signed APK (manual for this run; automatic for future `-pre` tags).
+
+#### Test artifacts
+- Phone: `/storage/emulated/0/LudashiPlus-v3.1.2-pre2.apk` (512 MB, signed)
+- GitHub: https://github.com/The412Banner/Ludashi-plus/releases/tag/v3.1.2-pre2
+
+#### Awaiting on-device confirmation
+- App installs + launches normally
+- Settings → Import Lossless.dll picker works; status shows "Imported: …"
+- LSFG-VK enabled on a container → game launches with FG (multiplier, flow scale, perf mode)
+- Quick menu shows "Lossless.dll not found" guidance when no DLL imported
+- Color rendering correct (channel-rework revert preserved); vkCmdPipelineBarrier2 shim still working on previously-broken devices
+
+#### After green test
+- Push `v3.1.2` tag (no `-pre`) → fires 5-APK matrix → publishes stable release with all variants
+- Update README + master map for v3.1.2 stable note about manual DLL import requirement
+
+---
+
+### [DEPRECATED — release deleted, superseded by v3.1.2-pre2] — v3.1.2 — LSFG-VK layer rebuild (vkCmdPipelineBarrier2 shim) (2026-05-04)
 **Branch:** `main` | **Tag:** `v3.1.2` | **Base APK:** `ludashi-3.0-lsfg-vk-base-v3.1.2`
 
 #### Why
