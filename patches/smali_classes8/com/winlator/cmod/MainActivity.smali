@@ -357,7 +357,7 @@
 
     .line 270
     .local v0, "fragmentManager":Landroidx/fragment/app/FragmentManager;
-    const v1, 0x7f090099
+    const v1, 0x7f09009b
 
     if-eqz p2, :cond_0
 
@@ -434,7 +434,7 @@
 
     .line 287
     .local v1, "dialog":Lcom/winlator/cmod/contentdialog/ContentDialog;
-    const v2, 0x7f0900a9
+    const v2, 0x7f0900ab
 
     invoke-virtual {v1, v2}, Lcom/winlator/cmod/contentdialog/ContentDialog;->findViewById(I)Landroid/view/View;
 
@@ -489,7 +489,7 @@
 
     .line 298
     .local v2, "pInfo":Landroid/content/pm/PackageInfo;
-    const v4, 0x7f09018f
+    const v4, 0x7f090192
 
     invoke-virtual {v1, v4}, Lcom/winlator/cmod/contentdialog/ContentDialog;->findViewById(I)Landroid/view/View;
 
@@ -515,7 +515,7 @@
     invoke-virtual {v4, v6}, Landroid/widget/TextView;->setMovementMethod(Landroid/text/method/MovementMethod;)V
 
     .line 302
-    const v6, 0x7f09013d
+    const v6, 0x7f09013f
 
     invoke-virtual {v1, v6}, Lcom/winlator/cmod/contentdialog/ContentDialog;->findViewById(I)Landroid/view/View;
 
@@ -652,7 +652,7 @@
 
     .line 322
     .local v3, "creditsAndThirdPartyAppsHTML":Ljava/lang/String;
-    const v6, 0x7f090149
+    const v6, 0x7f09014b
 
     invoke-virtual {v1, v6}, Lcom/winlator/cmod/contentdialog/ContentDialog;->findViewById(I)Landroid/view/View;
 
@@ -688,7 +688,7 @@
 
     .line 328
     .local v0, "glibcExpVersionForkHTML":Ljava/lang/String;
-    const v7, 0x7f090164
+    const v7, 0x7f090166
 
     invoke-virtual {v1, v7}, Lcom/winlator/cmod/contentdialog/ContentDialog;->findViewById(I)Landroid/view/View;
 
@@ -1008,7 +1008,7 @@
     invoke-virtual {p0, v3}, Lcom/winlator/cmod/MainActivity;->setContentView(I)V
 
     .line 90
-    const v3, 0x7f09008b
+    const v3, 0x7f09008d
 
     invoke-virtual {p0, v3}, Lcom/winlator/cmod/MainActivity;->findViewById(I)Landroid/view/View;
 
@@ -1019,7 +1019,7 @@
     iput-object v3, p0, Lcom/winlator/cmod/MainActivity;->drawerLayout:Landroidx/drawerlayout/widget/DrawerLayout;
 
     .line 91
-    const v3, 0x7f0900d6
+    const v3, 0x7f0900d8
 
     invoke-virtual {p0, v3}, Lcom/winlator/cmod/MainActivity;->findViewById(I)Landroid/view/View;
 
@@ -1032,7 +1032,7 @@
     invoke-virtual {v3, p0}, Lcom/google/android/material/navigation/NavigationView;->setNavigationItemSelectedListener(Lcom/google/android/material/navigation/NavigationView$OnNavigationItemSelectedListener;)V
 
     .line 94
-    const v5, 0x7f090196
+    const v5, 0x7f090199
 
     invoke-virtual {p0, v5}, Lcom/winlator/cmod/MainActivity;->findViewById(I)Landroid/view/View;
 
@@ -1142,7 +1142,7 @@
 
     move-result-object v2
 
-    const v4, 0x7f090279
+    const v4, 0x7f09027c
 
     invoke-interface {v2, v4}, Landroid/view/Menu;->findItem(I)Landroid/view/MenuItem;
 
@@ -1188,12 +1188,12 @@
 
     if-eqz v11, :cond_7
 
-    const v11, 0x7f090277
+    const v11, 0x7f09027a
 
     goto :goto_2
 
     :cond_7
-    const v11, 0x7f09027b
+    const v11, 0x7f09027e
 
     .line 126
     .restart local v11    # "menuItemId":I
@@ -1214,7 +1214,7 @@
     if-nez v6, :cond_8
 
     .line 129
-    const v11, 0x7f090277
+    const v11, 0x7f09027a
 
     .line 130
     invoke-virtual {v3}, Lcom/google/android/material/navigation/NavigationView;->getMenu()Landroid/view/Menu;
@@ -1324,24 +1324,24 @@
 
     const/4 v3, 0x0
 
-    # Game Stores: GOG (0x7f090392)
-    const v4, 0x7f090392
+    # Game Stores: GOG (0x7f090395)
+    const v4, 0x7f090395
     if-eq v1, v4, :start_gog
 
-    # Game Stores: Epic Games (0x7f090391)
-    const v4, 0x7f090391
+    # Game Stores: Epic Games (0x7f090394)
+    const v4, 0x7f090394
     if-eq v1, v4, :start_epic
 
-    # Game Stores: Amazon Games (0x7f090390)
-    const v4, 0x7f090390
+    # Game Stores: Amazon Games (0x7f090393)
+    const v4, 0x7f090393
     if-eq v1, v4, :start_amazon
 
-    # Game Stores: Steam (0x7f090393)
-    const v4, 0x7f090393
+    # Game Stores: Steam (0x7f090396)
+    const v4, 0x7f090396
     if-eq v1, v4, :start_steam
 
-    # Downloads (0x7f090394)
-    const v4, 0x7f090394
+    # Downloads (0x7f090397)
+    const v4, 0x7f090397
     if-eq v1, v4, :start_downloads
 
     packed-switch v1, :pswitch_data_0
@@ -1464,7 +1464,7 @@
     nop
 
     :pswitch_data_0
-    .packed-switch 0x7f090275
+    .packed-switch 0x7f090278
         :pswitch_6
         :pswitch_5
         :pswitch_4
