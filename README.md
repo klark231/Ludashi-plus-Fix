@@ -16,6 +16,13 @@ It is signed with the same key as StevenMXZ's original release, meaning it can u
 
 ---
 
+## What's new in v3.1.2
+
+- **Better LSFG-VK device compatibility** — the bundled `liblsfg-vk-layer.so` was rebuilt from FrankBarretta's lsfg-vk-android upstream (commit `b55b182`), which adds a compatibility shim for `vkCmdPipelineBarrier2`. Devices on legacy Vulkan drivers that don't expose `VK_KHR_synchronization2` should now be able to use LSFG-VK.
+- **Android AHB-based frame generation** — the rebuilt layer also includes upstream's Android Hardware Buffer path, useful on Vortek/Turnip drivers.
+- **Round 1 patch cleanup** — the no-op format-threading patch we carried in v3.1.1 has been dropped from the layer source; only the small Android-platform-define + liblog-link patches remain.
+- All v3.1.1 fixes still in place (cyan/orange channel swap stays fixed via the upstream Pipetto reverts).
+
 ## What's new in v3.1.1 (hotfix)
 
 - **Fixes the cyan/orange color bug when LSFG-VK is enabled** — in v3.1, enabling LSFG-VK caused a clean R↔B channel swap in games (cyan skin, orange wallpaper) and on the Wine desktop. Root cause was two upstream Pipetto Winlator commits that reworked the swapchain channel handling (BGRA8 swapchain + per-window RGBA8 texture allocation); the LSFG framegen layer reads swapchain bytes raw, so it saw mismatched semantics. Both commits have been reverted on the base APK; everything else from v3.1 is unchanged.

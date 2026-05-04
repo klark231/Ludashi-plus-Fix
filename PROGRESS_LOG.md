@@ -4,6 +4,31 @@ Build and modification history for Ludashi-plus — Winlator Ludashi v2.9 bionic
 
 ---
 
+### [stable] — v3.1.2 — LSFG-VK layer rebuild (vkCmdPipelineBarrier2 shim) (2026-05-04)
+**Branch:** `main` | **Tag:** `v3.1.2` | **Base APK:** `ludashi-3.0-lsfg-vk-base-v3.1.2`
+
+#### Why
+A user reported LSFG-VK didn't work on their device after v3.1.1 shipped. The proximate cause was that the bundled `liblsfg-vk-layer.so` was built from `FrankBarretta/lsfg-vk-android@93ff5e8` (v1.0.0-4), which assumes `VK_KHR_synchronization2` is available — many Adreno/Mali Vulkan 1.1/1.2 drivers don't expose it.
+
+Upstream had landed a fix the same day (`b55b182`, "implement compatibility shim for vkCmdPipelineBarrier2 to support legacy Vulkan devices"), so the cleanest action was to bump our layer source pin and rebuild.
+
+#### What changed
+- `The412Banner/LLS@lsfg-vk-color-fix`: bumped `lsfg-vk-android` submodule from `93ff5e8` → `b55b182`. Pulls in: vkCmdPipelineBarrier2 compatibility shim, Android AHB-based frame generation for Vortek/Turnip, shaderFloat16, enhanced device feature probing.
+- `The412Banner/LLS@lsfg-vk-color-fix`: slimmed `patches/0001-lsfg-vk-color-format-fix.patch` down. Round 1 functional patch (threading `pCreateInfo->imageFormat` into `LsContext`) was a confirmed no-op and the upstream restructure into `framegen/v3.1_src/` would have broken its file paths anyway. Kept: `VK_USE_PLATFORM_ANDROID_KHR=1` define (still needed for `framegen/src/core/image.cpp` AHB types). Added: `target_link_libraries(lsfg-vk PRIVATE log)` — upstream b55b182's new `__android_log_print` calls weren't linked.
+- LLS CI run **25313482636** ✅ (1m22s) → liblsfg-vk-layer.so (26 MB unstripped, 2.5 MB stripped).
+- `The412Banner/Winlator-Ludashi@lsfg-vk-color-fix`: dropped new stripped `.so` into `app/src/main/assets/lsfg_vk/android_arm64_v8a/liblsfg-vk-layer.so` (commit `05c28c7`).
+- Winlator-Ludashi CI run **25313670588** ✅ (1m58s) → app-debug.apk (507 MB) → published as `ludashi-3.0-lsfg-vk-base-v3.1.2` on Ludashi-plus.
+- Ludashi-plus build.yml: bumped `gh release download` tag to `ludashi-3.0-lsfg-vk-base-v3.1.2`.
+
+#### What's unchanged from v3.1.1
+- Pipetto channel-rework reverts still in place — color bug stays fixed
+- All store integrations, splash screen, downloads UI, etc.
+
+#### Deferred Round 1 cleanup — DONE
+The deferred cleanup item from `project_lsfg_vk_color_fix.md` (revert the Round 1 layer patch next time we rebuild the layer) has been resolved as part of this release.
+
+---
+
 ### [stable] — v3.1.1 hotfix — LSFG-VK color bug fix (2026-05-04)
 **Branch:** `3.0-revert-test` | **Tag:** `v3.1.1` | **Base APK:** `ludashi-3.0-lsfg-vk-base-revert-test`
 

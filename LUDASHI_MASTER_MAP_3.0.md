@@ -1,9 +1,9 @@
 # Ludashi-plus Master Map — v3.0 Base APK
 
-Generated: 2026-04-30 (v3.1.1 hotfix update: 2026-05-04)  
-Base APK: `Winlator-Ludashi 3.0 bionic` — v3.1.1 hotfix uses `The412Banner/Winlator-Ludashi@lsfg-vk-color-fix` (post-revert-channel-rework merge), published as `ludashi-3.0-lsfg-vk-base-revert-test`. v3.1.1 fixes the LSFG-VK R↔B channel swap by reverting upstream Pipetto commits `89f805e` + `8d4cb01`.  
+Generated: 2026-04-30 (v3.1.2 update: 2026-05-04)  
+Base APK: `Winlator-Ludashi 3.0 bionic` — v3.1.2 uses `The412Banner/Winlator-Ludashi@lsfg-vk-color-fix` (commit `05c28c7`, layer rebuilt with vkCmdPipelineBarrier2 shim), published as `ludashi-3.0-lsfg-vk-base-v3.1.2`. Layer source pinned at `FrankBarretta/lsfg-vk-android@b55b182`. v3.1.1's color-bug reverts (Pipetto `89f805e` + `8d4cb01`) still in place.  
 Decompiled at: `/data/data/com.termux/files/home/ludashi_decoded_3.0/`  
-Build status: **✅ All 5 APK variants built successfully on 3.0 branch** (CI run 25165864621); v3.1.1 base APK CI run 25300464326 ✅ (3m12s).
+Build status: **✅ v3.1.2 base APK CI run 25313670588** ✅ (1m58s); layer rebuild LLS run 25313482636 ✅ (1m22s).
 
 ---
 
