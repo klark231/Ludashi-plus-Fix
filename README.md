@@ -1,3 +1,5 @@
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/n8S4G2WZQ4)
+
 <p align="center">
   <img src="patches/res/mipmap-xxxhdpi-v4/ic_launcher.png" alt="Ludashi+" width="120">
 </p>
@@ -122,3 +124,8 @@ Updated components (`wcps`) for improved compatibility and performance, plus new
 - D8VK: [github.com/AlpyneDreams/d8vk](https://github.com/AlpyneDreams/d8vk)
 - CNC DDraw: [github.com/FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)
 - [ptitSeb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others
+
+
+## Community
+
+Join our Discord: https://discord.gg/n8S4G2WZQ4
