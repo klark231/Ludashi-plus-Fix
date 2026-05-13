@@ -37,7 +37,7 @@ jobs:
       - name: Download base Ludashi APK (Winlator-Ludashi v3.0 bionic HyperOS3 Fix — LSFG-VK base)
         run: |
           gh release download base-apk-hos3fix \
-            --pattern "*.apk" \
+            --pattern "ludashi-bionic-hos3fix.apk" \
             -D base/ \
             -R klark231/Ludashi-plus-Fix
           ls -lh base/
