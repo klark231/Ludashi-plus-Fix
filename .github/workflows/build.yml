@@ -34,15 +34,14 @@ jobs:
           echo "$HOME/bin" >> $GITHUB_PATH
           java -jar $HOME/bin/apktool.jar --version
 
-      - name: Download base Ludashi APK (Winlator-Ludashi v3.0 bionic — LSFG-VK base)
-        run: |
-          gh release download ludashi-3.0-lsfg-vk-base-revert-test \
-            --pattern "ludashi-bionic.apk" \
-            -D base/ \
-            -R The412Banner/Ludashi-plus
-          ls -lh base/
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download base Ludashi HyperOS3 Fix APK (LSFV-VK)
+       run: |
+            gh release download base-apk-hos3fix \
+              --pattern "*.apk" \
+              -D base/ \
+              -R klark231/Ludashi-plus-Fix
+          env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Detect Kotlin version in base APK and install matching kotlinc
         run: |
