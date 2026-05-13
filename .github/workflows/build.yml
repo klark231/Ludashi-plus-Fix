@@ -35,13 +35,13 @@ jobs:
           java -jar $HOME/bin/apktool.jar --version
 
       - name: Download base Ludashi HyperOS3 Fix APK (LSFV-VK)
-       run: |
+        run: |
             gh release download base-apk-hos3fix \
               --pattern "ludashi-bionic-hos3fix.apk" \
               -D base/ \
               -R klark231/Ludashi-plus-Fix
-          env:
-            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            env:
+               GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Detect Kotlin version in base APK and install matching kotlinc
         run: |
