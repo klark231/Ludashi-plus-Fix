@@ -37,7 +37,7 @@ jobs:
       - name: Download base Ludashi HyperOS3 Fix APK (LSFV-VK)
        run: |
             gh release download base-apk-hos3fix \
-              --pattern "*.apk" \
+              --pattern "ludashi-bionic-hos3fix.apk" \
               -D base/ \
               -R klark231/Ludashi-plus-Fix
           env:
