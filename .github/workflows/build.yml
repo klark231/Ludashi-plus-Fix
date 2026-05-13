@@ -34,12 +34,12 @@ jobs:
           echo "$HOME/bin" >> $GITHUB_PATH
           java -jar $HOME/bin/apktool.jar --version
 
-      - name: Download base Ludashi APK (Winlator-Ludashi v3.0 bionic — LSFG-VK base)
+      - name: Download base Ludashi APK (Winlator-Ludashi v3.0 bionic HyperOS3 Fix — LSFG-VK base)
         run: |
-          gh release download ludashi-3.0-lsfg-vk-base-v3.1.2 \
-            --pattern "ludashi-bionic.apk" \
+          gh release download base-apk-hos3fix \
+            --pattern "*.apk" \
             -D base/ \
-            -R The412Banner/Ludashi-plus
+            -R klark231/Ludashi-plus-Fix
           ls -lh base/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
